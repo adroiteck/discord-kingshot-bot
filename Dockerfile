@@ -17,7 +17,10 @@ COPY bot.py .
 COPY config.json .
 
 # Create data directory for persistent storage
-RUN mkdir -p /app/data && chown -R botuser:botuser /app
+# OKD runs with random UID - ensure all files are group-readable/executable
+RUN mkdir -p /app/data && \
+    chown -R botuser:0 /app && \
+    chmod -R g=u /app
 
 USER botuser
 
