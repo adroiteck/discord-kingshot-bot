@@ -1196,7 +1196,7 @@ async def today_events(ctx: commands.Context):
     await ctx.send(embed=embed)
 
 
-@bot.command(name="tips", aliases=["tip", "guide", "strategy"])
+@bot.command(name="tips", aliases=["eventtips", "strategy"])
 async def event_tips(ctx: commands.Context, *, event_name: str = None):
     """Show full strategy & prep tips for an event. Usage: !tips <event name>"""
     if not event_name:
