@@ -1179,14 +1179,68 @@ async def today_events(ctx: commands.Context):
         color=discord.Color.red(),
         timestamp=datetime.utcnow(),
     )
+    # Discord embed total limit is 6000 chars. Show brief summary per event.
     for ev in active:
+        reminder = ev.get("reminder", "Event is active!")
+        # Extract just the first line/sentence as a brief summary
+        brief = reminder.split("\n")[0]
+        if len(brief) > 200:
+            brief = brief[:197] + "..."
+        brief += f"\n*Use `!tips {ev['name'].lower()}` for full strategy guide*"
         embed.add_field(
-            name=f"{ev['emoji']} {ev['name']}",
-            value=f"{ev.get('reminder', 'Event is active!')[:200]}",
+            name=f"{ev['emoji']} {ev['name']} ({ev.get('type', 'event').title()})",
+            value=brief,
             inline=False,
         )
-    embed.set_footer(text=f"Cycle Day {get_cycle_day() + 1}/28 | Use !nextevent for upcoming")
+    embed.set_footer(text=f"Cycle Day {get_cycle_day() + 1}/28 | Use !tips <event> for full guide")
     await ctx.send(embed=embed)
+
+
+@bot.command(name="tips", aliases=["tip", "guide", "strategy"])
+async def event_tips(ctx: commands.Context, *, event_name: str = None):
+    """Show full strategy & prep tips for an event. Usage: !tips <event name>"""
+    if not event_name:
+        await ctx.send("❓ Usage: `!tips <event name>` — e.g. `!tips bear hunt`, `!tips strongest governor`\n"
+                        "Use `!today` to see active events or `!schedule` for the full cycle.")
+        return
+
+    cycle = load_event_cycle()
+    search = event_name.lower().strip()
+    matches = []
+    for ev in cycle.get("events", []):
+        if search in ev["name"].lower() or ev["name"].lower() in search:
+            matches.append(ev)
+
+    if not matches:
+        # Fuzzy: check if any word matches
+        for ev in cycle.get("events", []):
+            name_words = ev["name"].lower().split()
+            search_words = search.split()
+            if any(sw in name_words for sw in search_words):
+                matches.append(ev)
+
+    if not matches:
+        event_names = ", ".join(f"`{ev['name']}`" for ev in cycle.get("events", []))
+        await ctx.send(f"❌ No event found matching **{event_name}**.\n\nAvailable events: {event_names}")
+        return
+
+    for ev in matches[:3]:
+        reminder = ev.get("reminder", "No tips available for this event.")
+        # Split into chunks if over 4096 chars (embed description limit)
+        if len(reminder) <= 4096:
+            embed = discord.Embed(
+                title=f"{ev['emoji']} {ev['name']} — Strategy & Prep Guide",
+                description=reminder,
+                color=discord.Color.green(),
+                timestamp=datetime.utcnow(),
+            )
+            embed.add_field(name="Duration", value=f"{ev.get('duration_days', 1)} day(s)", inline=True)
+            embed.add_field(name="Type", value=ev.get("type", "event").title(), inline=True)
+            embed.set_footer(text="🤖 Kingshot Bot | Use !today for active events")
+            await ctx.send(embed=embed)
+        else:
+            # Very long tip — send as plain text
+            await ctx.send(f"**{ev['emoji']} {ev['name']} — Strategy & Prep Guide**\n\n{reminder[:2000]}")
 
 
 @bot.command(name="setanchor")

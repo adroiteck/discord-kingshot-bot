@@ -9,7 +9,7 @@
       "cycle_day_start": 0,
       "duration_days": 7,
       "type": "special",
-      "reminder": "Moonlit Promise event is active all week! Complete daily tasks for exclusive rewards."
+      "reminder": "Moonlit Promise is active all week!\n\n🎯 **Strategy:**\n• Complete every daily task — points compound over 7 days\n• Prioritize limited-time objectives first each day\n• Don't skip any day; consistent dailies outperform burst play\n\n📦 **Prep:**\n• Save gems for event shop refreshes\n• Keep speedups ready for any construction/research tasks\n• Check event milestones and plan which rewards to target"
     },
     {
       "name": "Hero Rally",
@@ -17,7 +17,7 @@
       "cycle_day_start": 0,
       "duration_days": 3,
       "type": "solo",
-      "reminder": "Recruit and upgrade heroes for rally points! Focus on your strongest heroes."
+      "reminder": "Hero Rally is active! Recruit and upgrade heroes for points.\n\n🎯 **Strategy:**\n• Use Hero Shards on heroes close to a star-level breakpoint for max efficiency\n• Prioritize Mythic shards (125 pts each) over Rare (15 pts)\n• Level up hero skills if you have spare skill books\n\n📦 **Prep:**\n• Hoard Hero Shards from chests — don't spend them before this event\n• Stock up on Hero XP items and Skill Books\n• Save Mithril for hero-related upgrades"
     },
     {
       "name": "Alliance Brawl",
@@ -25,7 +25,7 @@
       "cycle_day_start": 0,
       "duration_days": 3,
       "type": "alliance",
-      "reminder": "Alliance Brawl is active! Coordinate with your team and push hard.\n\n📋 **Daily Stages & Horn Values:**\nDay 1: Rise of the City (1 horn)\nDay 2: Hero Development (2 horns)\nDay 3: Pet Training (2 horns)\nDay 4: Gear Enhancement (2 horns)\nDay 5: Trade Baron (2 horns)\nDay 6: Full-Scale Competition (4 horns!) ← DECISIVE DAY"
+      "reminder": "Alliance Brawl is active! Coordinate with your alliance and push hard.\n\n📋 **Daily Stages & Horn Values:**\nDay 1: Rise of the City (1 horn)\nDay 2: Hero Development (2 horns)\nDay 3: Pet Training (2 horns)\nDay 4: Gear Enhancement (2 horns)\nDay 5: Trade Baron (2 horns)\nDay 6: Full-Scale Competition (4 horns!) ← DECISIVE DAY\n\n🎯 **Strategy:**\n• Save Intel Missions for Days 2 & 4 — they score 3,000 pts each\n• Day 3 (Pets): Use Taming Marks, especially Advanced ones\n• Day 5 (Hunting): Burn all saved stamina on high-level beasts + terror rallies\n• Day 6 is worth 4 horns — save your best resources for the final push\n• Escort & raid trucks daily — huge point earners even on non-raid days\n\n📦 **Prep:**\n• Don't switch alliances after Saturday (matchmaking locks Sunday 23:00 UTC)\n• Stockpile Intel Missions, stamina, Taming Marks, and speedups\n• Must be in a Top 20 alliance to be eligible"
     },
     {
       "name": "Swordland Showdown",
@@ -33,7 +33,7 @@
       "cycle_day_start": 0,
       "duration_days": 3,
       "type": "alliance",
-      "reminder": "Swordland Showdown phases are running!\n🏰 Rush priority: Stables → Swordshrine → Sanctums\n🛡️ Losses do NOT affect city troops!"
+      "reminder": "Swordland Showdown is active!\n\n🏰 **Rush Priority:** Royal Stables → Swordshrine → Sanctums\n🛡️ Losses do NOT affect your city troops — fight freely!\n\n🎯 **Strategy:**\n• Grab Royal Stables first — faster teleports control the entire map\n• Take at least one Sanctum early for steady passive point flow\n• Capture the Hall of Reformation for 15% damage boost\n• Bell Tower cuts capture time by 50% — critical for flipping contested buildings\n• In the final phase, loot Under-cellars for sudden point boosts\n• Never go solo — call out enemy movements, rally times, and defenses\n\n📦 **Prep:**\n• Coordinate legion registration with R4/R5 leadership\n• Assign roles: rushers, defenders, and flankers\n• Move cities close to alliance territory for faster reinforcement"
     },
     {
       "name": "Cesares Fury",
@@ -41,7 +41,7 @@
       "cycle_day_start": 1,
       "duration_days": 3,
       "type": "solo",
-      "reminder": "Cesares Fury is active! Use your Governor Stamina Pack wisely."
+      "reminder": "Cesares Fury is active! Hunt Cesares Rebels for big rewards.\n\n🎯 **Strategy:**\n• Choose the HIGHEST difficulty you can manage — even incomplete runs give better rewards per stage\n• Always use **Diana** in marches — her Iron Constitution skill (-20% stamina cost) is essential\n• Spread attacks over 3 days to use naturally regenerating stamina\n• Use Cesares Accords to get full credit without soloing — same rewards whether you fight or not\n• For Cesares Captains: send 1 troop first so all alliance members can hit it, then go all-in\n\n📦 **Prep:**\n• Save 1,100–1,500 stamina before the event starts\n• Level up Diana's Iron Constitution skill if possible\n• Stock Governor Stamina Packs\n• Help 7 allies with Accords to get Cesares Aid Chests (5% chance of Mythic General Shard)"
     },
     {
       "name": "Grow Your Heroes",
@@ -49,7 +49,7 @@
       "cycle_day_start": 2,
       "duration_days": 3,
       "type": "solo",
-      "reminder": "Grow Your Heroes event started! Upgrade hero shards and unlock new abilities."
+      "reminder": "Grow Your Heroes is active! Use Hero Shards to level up star levels for points.\n\n📊 **Point Values:**\n• Rare Shard = 15 pts\n• Epic Shard = 50 pts\n• Mythic Shard = 125 pts\n\n🎯 **Strategy:**\n• Mythic shards give the best point-per-shard ratio — prioritize them\n• Ascend heroes who are close to the next star level for milestone bonuses\n• Don't waste Universal Shards here unless you need them for milestones\n\n📦 **Prep:**\n• Hoard ALL hero shards from chests for days/weeks before this event\n• Save skill books and Hero XP items\n• Check which heroes are 1-2 shards away from a star-up"
     },
     {
       "name": "Hero Rally (Round 2)",
@@ -57,7 +57,7 @@
       "cycle_day_start": 3,
       "duration_days": 4,
       "type": "solo",
-      "reminder": "New Hero Rally round started! Keep recruiting and upgrading heroes."
+      "reminder": "Hero Rally Round 2 is active! Another chance to recruit and upgrade heroes.\n\n🎯 **Strategy:**\n• Same as Round 1 — use shards on heroes near star-level breakpoints\n• If you already spent most shards in Round 1, focus on Skill Book upgrades for points\n• Check the event shop for discounted hero items\n\n📦 **Prep:**\n• Save any remaining shards from Round 1\n• Complete daily quests that reward Hero XP and shards"
     },
     {
       "name": "Alliance Championship",
@@ -65,7 +65,7 @@
       "cycle_day_start": 4,
       "duration_days": 4,
       "type": "alliance",
-      "reminder": "Alliance Championship starts today! Compete against other alliances for glory and rewards.\n\n⚡ Coordinate rallies and maximize alliance participation!"
+      "reminder": "Alliance Championship starts today! 6 alliances, 5 rounds of battle.\n\n🎯 **Strategy:**\n• **Formation:** 50% Infantry (tanks), 20% Lancers (tactics), 30% Archers (damage)\n• **Lane Roles:** Strongest players on Main lanes, mid-tier on Secondary, low-power on Sacrifice lanes to slow enemies\n• Round 1: Spread strong members across all lanes to scout enemy placements\n• Rounds 2-5: Study battle reports and counter enemy patterns with surprise lane switches\n• Activate pet skills and buffs BEFORE registering — they stay active for the entire event\n\n📦 **Prep:**\n• R4/R5 must register alliance during the 2-day registration window\n• Only top 20 players by combat power count — ensure your strongest are registered\n• Assign lane roles in advance and communicate via alliance chat\n• Pre-set troop formations (don't scramble during prep phase)"
     },
     {
       "name": "Armament Competition",
@@ -73,7 +73,7 @@
       "cycle_day_start": 7,
       "duration_days": 2,
       "type": "solo",
-      "reminder": "Armament Competition is active! Enhance and forge gear for points. Save your best materials!"
+      "reminder": "Armament Competition is active! Enhance and forge gear for points.\n\n🎯 **Strategy:**\n• Focus on using Mithril for gear enhancements — highest point value\n• Enhancement levels: +20 (Lvl 11 Hammers), +40 (Lvl 12), +60 (Lvl 13), +80 (Lvl 14), +100 (Lvl 15)\n• Enhance gear that your main combat heroes actually use for double value\n• Use Governor Gear Charms for additional points\n\n📦 **Prep:**\n• Buy Mithril and Custom Mythic boxes from the Arena store\n• Collect Forge Hammers from Bear Hunt rewards\n• Save all gear enhancement materials — do NOT enhance gear outside this event\n• Do dailies consistently to stockpile 'enhance' materials\n• Collect from Conquest every 9 hours"
     },
     {
       "name": "Desert Trial",
@@ -81,7 +81,7 @@
       "cycle_day_start": 8,
       "duration_days": 3,
       "type": "solo",
-      "reminder": "Desert Trial / Champion's Way is active! Defeat Elite Rebels for points and rewards."
+      "reminder": "Desert Trial / Champion's Way is active! Hunt beasts for Weapon Scraps to find Elite Rebels.\n\n🎯 **Strategy:**\n• Clear all 5 milestone chests first (at 1, 3, 5, 7, and 10 Elite Rebel kills)\n• After milestones, put stamina into beast hunting for more Weapon Scraps\n• Use **Diana** in rallies to reduce stamina costs\n• Enable Auto-Join for rallies — don't miss the 50 daily participation rewards\n• Weapon Scraps don't expire — save extras for future use\n\n📦 **Prep:**\n• Stock up stamina before the event (1,000+ recommended)\n• Level up Diana's stamina-reduction skill\n• Coordinate rally times with alliance members\n• Save Precious Keepsakes exchanges for after clearing milestones"
     },
     {
       "name": "Fishing",
@@ -89,15 +89,7 @@
       "cycle_day_start": 9,
       "duration_days": 3,
       "type": "solo",
-      "reminder": "Fishing Event is active! New attempt every 3 hours — don't forget to cast your line!"
-    },
-    {
-      "name": "Strongest Governor",
-      "emoji": "👑",
-      "cycle_day_start": 14,
-      "duration_days": 7,
-      "type": "competitive",
-      "reminder": "Strongest Governor starts today! (7-day event)\n\n📋 **Daily Schedule:**\nDay 1: City Construction\nDay 2: Hero Development\nDay 3: Basic Skills Up\nDay 4: Combat Training\nDay 5: Basic Skills Up\nDay 6: Combat Training\nDay 7: Hero Development\n\n⏰ Daily reset at 00:00 UTC. Hoard speedups & resources!"
+      "reminder": "Fishing Event is active! New attempts refresh every 3 hours.\n\n🎯 **Strategy:**\n• Use the Ocean Prospector Map on your FIRST attempt — it maxes fishing gear to Lvl 10 temporarily\n• Upgrade order: Hook → Line → Sinker (longer line = rarer, higher-point fish)\n• Cast close to the left or right edge to avoid hitting fish on the way down — reach maximum depth\n• Target 2-star fish over 1-star — learn to tell them apart visually\n• Log in consistently every 3 hours to avoid wasting attempts\n\n📦 **Prep:**\n• Set alarms every 3 hours during the event\n• Save gems for gear upgrades if you haven't maxed fishing equipment\n• Don't waste the Ocean Prospector Map on a short cast"
     },
     {
       "name": "Hall of Heroes",
@@ -105,7 +97,7 @@
       "cycle_day_start": 10,
       "duration_days": 3,
       "type": "solo",
-      "reminder": "Hall of Heroes is active! Collect hero shards and unlock powerful Mythic heroes."
+      "reminder": "Hall of Heroes is active! Collect hero shards and unlock powerful Mythic heroes.\n\n🎯 **Strategy:**\n• Focus on shards for heroes you're actually building — don't spread too thin\n• Prioritize Mythic heroes that complement your main march formation\n• Check which heroes are closest to their next ascension milestone\n\n📦 **Prep:**\n• Save Universal Hero Shards for this event\n• Research which Mythic heroes are meta for your generation\n• Have Hero XP items ready to immediately level new unlocks"
     },
     {
       "name": "Champagne Fair",
@@ -113,7 +105,7 @@
       "cycle_day_start": 11,
       "duration_days": 3,
       "type": "solo",
-      "reminder": "Champagne Fair is active! Trade hero shards with other governors. Check for rare heroes you need!"
+      "reminder": "Champagne Fair is active! Trade excess hero shards and skill books for Fair Vouchers.\n\n🎯 **Strategy:**\n• Trade duplicate Rare/Epic shards you don't need — keep Mythic shards\n• Use Fair Vouchers to buy: Widgets, Forgehammers, Governor Gear materials\n• Prioritize items you can't easily farm elsewhere\n• Check the shop daily — stock refreshes and some items are limited\n\n📦 **Prep:**\n• Identify which hero shards are safe to trade (heroes you won't build)\n• Save duplicate skill books for trading\n• Make a wishlist of items you want from the Fair shop"
     },
     {
       "name": "Golden Glaives",
@@ -121,7 +113,15 @@
       "cycle_day_start": 12,
       "duration_days": 2,
       "type": "solo",
-      "reminder": "Golden Glaives is active! Complete Intel Missions for collection rewards."
+      "reminder": "Golden Glaives is active! Complete Intel Missions to collect Dim Goldstones.\n\n🎯 **Strategy:**\n• Regular Intel Missions (beast hunting, rescuing refugees) = 1 Dim Goldstone each\n• Hunting Golden Glaives on the map = 10 Dim Goldstones each — always prioritize these!\n• Trade Goldstones for collection rewards on the event page\n• This runs during Strongest Governor prep phase — stack your activities\n\n📦 **Prep:**\n• Save Intel Missions if possible\n• Keep stamina available for Golden Glaive hunting on the map\n• Check the rewards page to see what Goldstone thresholds give the best loot"
+    },
+    {
+      "name": "Strongest Governor",
+      "emoji": "👑",
+      "cycle_day_start": 14,
+      "duration_days": 7,
+      "type": "competitive",
+      "reminder": "Strongest Governor starts today! The most prestigious 7-day competition.\n\n📋 **Daily Schedule:**\nDay 1: City Construction\nDay 2: Hero Development\nDay 3: Basic Skills Up\nDay 4: Combat Training\nDay 5: Basic Skills Up\nDay 6: Combat Training\nDay 7: Hero Development\n⏰ Daily reset at 00:00 UTC\n\n🎯 **Strategy:**\n• Day 1 (Construction): Use Truegold and speedups on building/research upgrades. Governor Gear Charms count too\n• Day 2 & 7 (Hero Dev): Use Mithril, Hero Shards, and Forgehammers. Time your biggest upgrades for these days\n• Day 3 & 5 (Skills): Spend skill books and research scrolls\n• Day 4 & 6 (Combat): Train highest-tier troops possible. Use Mithril and Hero Gear Forgehammers\n• Cross-Kingdom Rankings (top 2,000) give the best rewards — track your position\n\n📦 **Prep:**\n• Start hoarding speedups, Truegold, Mithril, and Hero Shards WEEKS in advance\n• Pre-queue building upgrades to finish on Day 1\n• Save ALL hero shards and skill books for Days 2, 3, 5, 7\n• Batch troop training for Days 4 & 6\n• Check leaderboard and pace yourself — don't burn resources early if you can't maintain rank"
     },
     {
       "name": "Merchant Empire",
@@ -129,7 +129,7 @@
       "cycle_day_start": 18,
       "duration_days": 7,
       "type": "alliance",
-      "reminder": "Merchant Empire starts today! (7-day trading event)\n\nSend caravans, escort allies, raid enemies. Max 4 caravans/day."
+      "reminder": "Merchant Empire starts today! 7-day caravan trading event.\n\n🎯 **Caravan Strategy:**\n• Launch caravans 4–6 hours AFTER daily reset to avoid peak raiders\n• Strong troops → Long routes (max rewards). Weaker → Short routes (safer)\n• Each caravan takes ~3.5 hrs — plan sends around your playtime\n• Use 'Assisting Squads' button once/day to get alliance protection (earn assist rewards up to 3/day)\n\n💀 **Raid Strategy:**\n• Max 4 successful raids/day (failed raids don't count against limit)\n• Target yellow SSR caravans — best loot even if already raided once\n• Raid rival Alliance Brawl caravans to hurt their score\n• Crossed swords icon = they raided you first — revenge time!\n• 🔥 = raided once, 🔥🔥 = raided twice\n\n📦 **Prep:**\n• Coordinate raid targets with alliance — share rival cart locations\n• Plan escort schedules so caravans aren't sent when you're offline\n• Rotate raid attempts among alliance members to deny rival points"
     },
     {
       "name": "All Out (Kill Event)",
@@ -137,7 +137,7 @@
       "cycle_day_start": 21,
       "duration_days": 2,
       "type": "pvp",
-      "reminder": "ALL OUT (Kill Event) starts today!\n\n⚠️ **SHIELD UP if you're not participating!**\n\nKill points from enemy troops earn individual & alliance rewards.\nCoordinate rallies, flag targets, and stay in comms!"
+      "reminder": "ALL OUT (Kill Event) starts today!\n\n⚠️ **SHIELD UP if you're not participating!**\n\n🎯 **Strategy (Attackers):**\n• Target players with lower Town Center level for easier wins\n• Hit milestone benchmarks first for free gems, then decide if you continue\n• After hitting milestones, pop a 24-hour Peace Shield immediately\n• Tile-hit according to server diplomatic rules\n• Coordinate rallies with alliance for big targets\n\n🛡️ **Strategy (Defenders/Non-Participants):**\n• Activate Peace Shield BEFORE the event starts\n• Send troops to a tile or allied garrison if you can't shield\n• Shelter excess resources in the warehouse\n• Stay shielded for the full 2 days if you have valuable troops\n\n📦 **Prep:**\n• Buy Peace Shields in advance (24h or 8h)\n• Move city to alliance territory for safety\n• Flag targets with R4/R5 leadership before event starts\n• Ensure hospital capacity is full — wounded troops add up fast"
     },
     {
       "name": "Bear Hunt",
@@ -146,7 +146,7 @@
       "duration_days": 1,
       "type": "alliance",
       "recurring_every_days": 2,
-      "reminder": "Bear Hunt (Pitfall) is available!\nThe bear deals NO return damage — go full offense!\nRally leaders: start when most members are online."
+      "reminder": "Bear Hunt (Pitfall) is available! The bear deals NO return damage — go full offense!\n\n🎯 **Strategy:**\n• **Formation:** 10% Infantry, 10% Cavalry, 80% Archers (max damage, zero defense needed)\n• **Best joiner heroes:** Amadeus, Chenko, Yanu — each gives 25% lethality in captain slot\n• R4/R5: Check every joiner's heroes and troops before launching — remove wrong bonuses\n• Move alliance cities as close to Pitfall as possible for faster rally return times\n• Last 5–7 minutes: ALL members launch their own rally for extra returning-troop hits\n\n📦 **Prep:**\n• Upgrade Pitfall using Hunting Arrows (from beast hunting) — up to Lvl 5 (+5% ATK/level, 1,900 arrows to max)\n• Pre-set an offensive-only march preset\n• Rally leaders: start when most members are online\n• Collect Forge Hammers from Bear Hunt rewards for Armament Competition"
     },
     {
       "name": "Sanctuary Battle",
@@ -155,7 +155,7 @@
       "duration_days": 1,
       "type": "alliance",
       "recurring_every_days": 3,
-      "reminder": "Sanctuary Battle today!\nCheck your alliance's voted battle time and be online and ready!"
+      "reminder": "Sanctuary Battle today! Hold outposts for 30+ minutes to occupy them.\n\n🎯 **Strategy:**\n• **Formation:** 50% Infantry (tanks), 30% Archers (damage), 20% Lancers (tactics)\n• Scout enemies first — adjust troop composition to counter theirs\n• Teleport key force leaders while marching secondary troops (hybrid approach)\n• Mid-week battles often have lower participation — easier victories\n• Define in advance: when to commit vs. when to strategically withdraw\n\n📦 **Prep:**\n• R4/R5: Vote on battle time slot based on when your strongest members are online\n• Analyze which time slots had weakest resistance in previous battles\n• Set up clear comms — alliance chat for live tactical adjustments\n• Pre-position cities near target sanctuaries for quick reinforcement"
     }
   ]
 }
