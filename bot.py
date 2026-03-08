@@ -67,6 +67,92 @@ def save_data(name, data):
 
 config = load_config()
 
+# Load event cycle data
+EVENT_CYCLE_PATH = Path(__file__).parent / "event_cycle.json"
+def load_event_cycle():
+    if EVENT_CYCLE_PATH.exists():
+        with open(EVENT_CYCLE_PATH) as f:
+            return json.load(f)
+    return {"cycle_anchor": "2026-03-06", "cycle_length_days": 28, "events": []}
+
+def get_cycle_day(dt=None):
+    """Get the current day in the event cycle (0-27)."""
+    cycle = load_event_cycle()
+    anchor = datetime.strptime(cycle["cycle_anchor"], "%Y-%m-%d")
+    if dt is None:
+        dt = datetime.utcnow()
+    delta = (dt - anchor).days
+    return delta % cycle.get("cycle_length_days", 28)
+
+def get_active_events(dt=None):
+    """Get events that are active on the given date."""
+    cycle = load_event_cycle()
+    cycle_len = cycle.get("cycle_length_days", 28)
+    day = get_cycle_day(dt)
+    active = []
+    for ev in cycle.get("events", []):
+        start = ev["cycle_day_start"]
+        duration = ev.get("duration_days", 1)
+        recurring = ev.get("recurring_every_days")
+        if recurring:
+            # Check if this recurring event is active today
+            for offset in range(0, cycle_len, recurring):
+                ev_start = (start + offset) % cycle_len
+                if ev_start <= day < ev_start + duration:
+                    active.append(ev)
+                    break
+        else:
+            end = start + duration
+            if end <= cycle_len:
+                if start <= day < end:
+                    active.append(ev)
+            else:
+                # Event wraps around cycle boundary
+                if day >= start or day < (end % cycle_len):
+                    active.append(ev)
+    return active
+
+def get_upcoming_events(days_ahead=7, dt=None):
+    """Get events starting in the next N days."""
+    cycle = load_event_cycle()
+    cycle_len = cycle.get("cycle_length_days", 28)
+    if dt is None:
+        dt = datetime.utcnow()
+    today = get_cycle_day(dt)
+    upcoming = []
+    for ev in cycle.get("events", []):
+        start = ev["cycle_day_start"]
+        recurring = ev.get("recurring_every_days")
+        if recurring:
+            for offset in range(0, cycle_len, recurring):
+                ev_start = (start + offset) % cycle_len
+                days_until = (ev_start - today) % cycle_len
+                if 0 < days_until <= days_ahead:
+                    start_date = dt + timedelta(days=days_until)
+                    upcoming.append((days_until, start_date, ev))
+            # Also check if starting today
+            for offset in range(0, cycle_len, recurring):
+                ev_start = (start + offset) % cycle_len
+                if ev_start == today:
+                    upcoming.append((0, dt, ev))
+        else:
+            days_until = (start - today) % cycle_len
+            if days_until == 0:
+                upcoming.append((0, dt, ev))
+            elif days_until <= days_ahead:
+                start_date = dt + timedelta(days=days_until)
+                upcoming.append((days_until, start_date, ev))
+    # Sort by days until start
+    upcoming.sort(key=lambda x: x[0])
+    # Deduplicate by event name
+    seen = set()
+    deduped = []
+    for item in upcoming:
+        if item[2]["name"] not in seen:
+            seen.add(item[2]["name"])
+            deduped.append(item)
+    return deduped
+
 # ---------------------------------------------------------------------------
 # Bot setup
 # ---------------------------------------------------------------------------
@@ -219,6 +305,7 @@ async def on_ready():
     scheduled_announcements.start()
     daily_tip_task.start()
     timer_check.start()
+    event_cycle_reminder.start()
     try:
         synced = await bot.tree.sync()
         log.info(f"Synced {len(synced)} slash command(s)")
@@ -999,6 +1086,129 @@ async def toggle_announcement(ctx: commands.Context, name: str):
 
 
 # =========================================================================
+# Event Cycle Commands
+# =========================================================================
+@bot.command(name="nextevent", aliases=["next", "upcoming"])
+async def next_event_cmd(ctx: commands.Context):
+    """Show the next upcoming events."""
+    upcoming = get_upcoming_events(days_ahead=7)
+    if not upcoming:
+        await ctx.send("📅 No upcoming events found in the next 7 days.")
+        return
+
+    embed = discord.Embed(
+        title="📅 Upcoming Events (Next 7 Days)",
+        color=discord.Color.blue(),
+        timestamp=datetime.utcnow(),
+    )
+    for days_until, start_date, ev in upcoming[:10]:
+        if days_until == 0:
+            timing = "🔴 **Active NOW**"
+        elif days_until == 1:
+            timing = "⏰ **Tomorrow**"
+        else:
+            timing = f"📆 In **{days_until} days** ({start_date.strftime('%a %m/%d')})"
+        duration = ev.get("duration_days", 1)
+        embed.add_field(
+            name=f"{ev['emoji']} {ev['name']}",
+            value=f"{timing}\nDuration: {duration} day{'s' if duration != 1 else ''} | Type: {ev.get('type', 'event').title()}",
+            inline=False,
+        )
+    embed.set_footer(text="Use !schedule for the full cycle | !setanchor to adjust cycle")
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="schedule", aliases=["cycle", "eventcycle"])
+async def show_schedule(ctx: commands.Context):
+    """Show the full 4-week event cycle schedule."""
+    cycle = load_event_cycle()
+    anchor = datetime.strptime(cycle["cycle_anchor"], "%Y-%m-%d")
+    cycle_len = cycle.get("cycle_length_days", 28)
+    today_cycle_day = get_cycle_day()
+    now = datetime.utcnow()
+
+    embed = discord.Embed(
+        title="📋 4-Week Event Cycle",
+        description=f"Cycle anchor: {cycle['cycle_anchor']} | Today: Day {today_cycle_day + 1}/28",
+        color=discord.Color.purple(),
+    )
+
+    # Group events by week
+    for week in range(4):
+        week_events = []
+        for ev in cycle.get("events", []):
+            if ev.get("recurring_every_days"):
+                continue  # Skip recurring for the overview
+            start = ev["cycle_day_start"]
+            if week * 7 <= start < (week + 1) * 7:
+                day_in_week = start - (week * 7)
+                days_label = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                start_date = anchor + timedelta(days=start)
+                active = "🔴 " if today_cycle_day == start else ""
+                week_events.append(
+                    f"{active}{ev['emoji']} **{ev['name']}** — Day {start + 1} ({ev.get('duration_days', 1)}d)"
+                )
+
+        if week_events:
+            embed.add_field(
+                name=f"{'▶️' if week * 7 <= today_cycle_day < (week + 1) * 7 else '📅'} Week {week + 1}",
+                value="\n".join(week_events) or "No events",
+                inline=False,
+            )
+
+    # Add recurring events
+    recurring = [ev for ev in cycle.get("events", []) if ev.get("recurring_every_days")]
+    if recurring:
+        rec_text = "\n".join(f"{ev['emoji']} **{ev['name']}** — every {ev['recurring_every_days']} days" for ev in recurring)
+        embed.add_field(name="🔄 Recurring", value=rec_text, inline=False)
+
+    embed.set_footer(text="Officers: !setanchor YYYY-MM-DD to adjust cycle start")
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="today", aliases=["active", "now"])
+async def today_events(ctx: commands.Context):
+    """Show events active right now."""
+    active = get_active_events()
+    if not active:
+        await ctx.send("📅 No events are active right now.")
+        return
+
+    embed = discord.Embed(
+        title="🔴 Active Events Right Now",
+        color=discord.Color.red(),
+        timestamp=datetime.utcnow(),
+    )
+    for ev in active:
+        embed.add_field(
+            name=f"{ev['emoji']} {ev['name']}",
+            value=f"{ev.get('reminder', 'Event is active!')[:200]}",
+            inline=False,
+        )
+    embed.set_footer(text=f"Cycle Day {get_cycle_day() + 1}/28 | Use !nextevent for upcoming")
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="setanchor")
+@commands.has_any_role("R4 | Leadership", "R5 | Alliance Leader")
+async def set_anchor(ctx: commands.Context, date_str: str):
+    """Set the cycle anchor date. Usage: !setanchor 2026-03-06"""
+    try:
+        new_anchor = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        await ctx.send("❌ Invalid date format. Use: `!setanchor YYYY-MM-DD`")
+        return
+
+    cycle = load_event_cycle()
+    cycle["cycle_anchor"] = date_str
+    with open(EVENT_CYCLE_PATH, "w") as f:
+        json.dump(cycle, f, indent=2)
+
+    new_day = get_cycle_day()
+    await ctx.send(f"✅ Cycle anchor updated to **{date_str}**. Today is now Cycle Day **{new_day + 1}/28**.")
+
+
+# =========================================================================
 # Background Tasks
 # =========================================================================
 @tasks.loop(minutes=1)
@@ -1077,12 +1287,115 @@ async def timer_check():
                         pass
 
 
+@tasks.loop(hours=1)
+async def event_cycle_reminder():
+    """Automatically announce events starting today based on the 4-week cycle."""
+    now = datetime.utcnow()
+    # Only fire at 8:00 UTC
+    if now.hour != 8:
+        return
+
+    cycle = load_event_cycle()
+    cycle_len = cycle.get("cycle_length_days", 28)
+    today = get_cycle_day(now)
+    channel_name = cycle.get("reminder_channel", "announcements")
+
+    # Track what we already announced today to avoid duplicates
+    announced_today = load_data("cycle_announced", {"date": "", "events": []})
+    today_str = now.strftime("%Y-%m-%d")
+    if announced_today.get("date") != today_str:
+        announced_today = {"date": today_str, "events": []}
+
+    for ev in cycle.get("events", []):
+        name = ev["name"]
+        if name in announced_today["events"]:
+            continue
+
+        start = ev["cycle_day_start"]
+        recurring = ev.get("recurring_every_days")
+        is_starting_today = False
+
+        if recurring:
+            for offset in range(0, cycle_len, recurring):
+                if (start + offset) % cycle_len == today:
+                    is_starting_today = True
+                    break
+        else:
+            if start == today:
+                is_starting_today = True
+
+        if is_starting_today:
+            for guild in bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=channel_name)
+                if channel:
+                    duration = ev.get("duration_days", 1)
+                    embed = discord.Embed(
+                        title=f"{ev['emoji']} {name} — Starts Today!",
+                        description=ev.get("reminder", f"{name} event is starting!"),
+                        color=discord.Color.gold(),
+                        timestamp=now,
+                    )
+                    embed.add_field(name="Duration", value=f"{duration} day{'s' if duration != 1 else ''}", inline=True)
+                    embed.add_field(name="Type", value=ev.get("type", "event").title(), inline=True)
+                    embed.add_field(name="Cycle Day", value=f"{today + 1}/28", inline=True)
+                    embed.set_footer(text="🤖 Auto-reminder | Use !nextevent for upcoming events")
+                    try:
+                        await channel.send(embed=embed)
+                        announced_today["events"].append(name)
+                    except discord.Forbidden:
+                        pass
+
+    # Also announce events starting TOMORROW as a heads-up
+    tomorrow = (today + 1) % cycle_len
+    for ev in cycle.get("events", []):
+        name = ev["name"]
+        tomorrow_key = f"tomorrow_{name}"
+        if tomorrow_key in announced_today["events"]:
+            continue
+
+        start = ev["cycle_day_start"]
+        recurring = ev.get("recurring_every_days")
+        is_tomorrow = False
+
+        if recurring:
+            for offset in range(0, cycle_len, recurring):
+                if (start + offset) % cycle_len == tomorrow:
+                    is_tomorrow = True
+                    break
+        else:
+            if start == tomorrow:
+                is_tomorrow = True
+
+        if is_tomorrow and ev.get("type") in ("alliance", "pvp", "competitive"):
+            for guild in bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=channel_name)
+                if channel:
+                    embed = discord.Embed(
+                        title=f"📢 {ev['emoji']} {name} — Starts Tomorrow!",
+                        description=f"**{name}** begins tomorrow. Start preparing now!",
+                        color=discord.Color.orange(),
+                        timestamp=now,
+                    )
+                    embed.set_footer(text="🤖 Auto-reminder | Heads up for alliance/PvP events")
+                    try:
+                        await channel.send(embed=embed)
+                        announced_today["events"].append(tomorrow_key)
+                    except discord.Forbidden:
+                        pass
+
+    save_data("cycle_announced", announced_today)
+
+
 @scheduled_announcements.before_loop
 async def before_scheduled():
     await bot.wait_until_ready()
 
 @daily_tip_task.before_loop
 async def before_daily_tip():
+    await bot.wait_until_ready()
+
+@event_cycle_reminder.before_loop
+async def before_event_cycle():
     await bot.wait_until_ready()
 
 @timer_check.before_loop

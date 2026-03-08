@@ -1,0 +1,161 @@
+{
+  "cycle_anchor": "2026-03-06",
+  "cycle_length_days": 28,
+  "reminder_channel": "announcements",
+  "events": [
+    {
+      "name": "Moonlit Promise",
+      "emoji": "🌙",
+      "cycle_day_start": 0,
+      "duration_days": 7,
+      "type": "special",
+      "reminder": "Moonlit Promise event is active all week! Complete daily tasks for exclusive rewards."
+    },
+    {
+      "name": "Hero Rally",
+      "emoji": "🚩",
+      "cycle_day_start": 0,
+      "duration_days": 3,
+      "type": "solo",
+      "reminder": "Recruit and upgrade heroes for rally points! Focus on your strongest heroes."
+    },
+    {
+      "name": "Alliance Brawl",
+      "emoji": "💥",
+      "cycle_day_start": 0,
+      "duration_days": 3,
+      "type": "alliance",
+      "reminder": "Alliance Brawl is active! Coordinate with your team and push hard.\n\n📋 **Daily Stages & Horn Values:**\nDay 1: Rise of the City (1 horn)\nDay 2: Hero Development (2 horns)\nDay 3: Pet Training (2 horns)\nDay 4: Gear Enhancement (2 horns)\nDay 5: Trade Baron (2 horns)\nDay 6: Full-Scale Competition (4 horns!) ← DECISIVE DAY"
+    },
+    {
+      "name": "Swordland Showdown",
+      "emoji": "⚔️",
+      "cycle_day_start": 0,
+      "duration_days": 3,
+      "type": "alliance",
+      "reminder": "Swordland Showdown phases are running!\n🏰 Rush priority: Stables → Swordshrine → Sanctums\n🛡️ Losses do NOT affect city troops!"
+    },
+    {
+      "name": "Cesares Fury",
+      "emoji": "🔥",
+      "cycle_day_start": 1,
+      "duration_days": 3,
+      "type": "solo",
+      "reminder": "Cesares Fury is active! Use your Governor Stamina Pack wisely."
+    },
+    {
+      "name": "Grow Your Heroes",
+      "emoji": "🦸",
+      "cycle_day_start": 2,
+      "duration_days": 3,
+      "type": "solo",
+      "reminder": "Grow Your Heroes event started! Upgrade hero shards and unlock new abilities."
+    },
+    {
+      "name": "Hero Rally (Round 2)",
+      "emoji": "🚩",
+      "cycle_day_start": 3,
+      "duration_days": 4,
+      "type": "solo",
+      "reminder": "New Hero Rally round started! Keep recruiting and upgrading heroes."
+    },
+    {
+      "name": "Alliance Championship",
+      "emoji": "🏆",
+      "cycle_day_start": 4,
+      "duration_days": 4,
+      "type": "alliance",
+      "reminder": "Alliance Championship starts today! Compete against other alliances for glory and rewards.\n\n⚡ Coordinate rallies and maximize alliance participation!"
+    },
+    {
+      "name": "Armament Competition",
+      "emoji": "🔨",
+      "cycle_day_start": 7,
+      "duration_days": 2,
+      "type": "solo",
+      "reminder": "Armament Competition is active! Enhance and forge gear for points. Save your best materials!"
+    },
+    {
+      "name": "Desert Trial",
+      "emoji": "🏜️",
+      "cycle_day_start": 8,
+      "duration_days": 3,
+      "type": "solo",
+      "reminder": "Desert Trial / Champion's Way is active! Defeat Elite Rebels for points and rewards."
+    },
+    {
+      "name": "Fishing",
+      "emoji": "🎣",
+      "cycle_day_start": 9,
+      "duration_days": 3,
+      "type": "solo",
+      "reminder": "Fishing Event is active! New attempt every 3 hours — don't forget to cast your line!"
+    },
+    {
+      "name": "Strongest Governor",
+      "emoji": "👑",
+      "cycle_day_start": 14,
+      "duration_days": 7,
+      "type": "competitive",
+      "reminder": "Strongest Governor starts today! (7-day event)\n\n📋 **Daily Schedule:**\nDay 1: City Construction\nDay 2: Hero Development\nDay 3: Basic Skills Up\nDay 4: Combat Training\nDay 5: Basic Skills Up\nDay 6: Combat Training\nDay 7: Hero Development\n\n⏰ Daily reset at 00:00 UTC. Hoard speedups & resources!"
+    },
+    {
+      "name": "Hall of Heroes",
+      "emoji": "🦸",
+      "cycle_day_start": 10,
+      "duration_days": 3,
+      "type": "solo",
+      "reminder": "Hall of Heroes is active! Collect hero shards and unlock powerful Mythic heroes."
+    },
+    {
+      "name": "Champagne Fair",
+      "emoji": "🍾",
+      "cycle_day_start": 11,
+      "duration_days": 3,
+      "type": "solo",
+      "reminder": "Champagne Fair is active! Trade hero shards with other governors. Check for rare heroes you need!"
+    },
+    {
+      "name": "Golden Glaives",
+      "emoji": "✨",
+      "cycle_day_start": 12,
+      "duration_days": 2,
+      "type": "solo",
+      "reminder": "Golden Glaives is active! Complete Intel Missions for collection rewards."
+    },
+    {
+      "name": "Merchant Empire",
+      "emoji": "🐫",
+      "cycle_day_start": 18,
+      "duration_days": 7,
+      "type": "alliance",
+      "reminder": "Merchant Empire starts today! (7-day trading event)\n\nSend caravans, escort allies, raid enemies. Max 4 caravans/day."
+    },
+    {
+      "name": "All Out (Kill Event)",
+      "emoji": "💀",
+      "cycle_day_start": 21,
+      "duration_days": 2,
+      "type": "pvp",
+      "reminder": "ALL OUT (Kill Event) starts today!\n\n⚠️ **SHIELD UP if you're not participating!**\n\nKill points from enemy troops earn individual & alliance rewards.\nCoordinate rallies, flag targets, and stay in comms!"
+    },
+    {
+      "name": "Bear Hunt",
+      "emoji": "🐻",
+      "cycle_day_start": 2,
+      "duration_days": 1,
+      "type": "alliance",
+      "recurring_every_days": 2,
+      "reminder": "Bear Hunt (Pitfall) is available!\nThe bear deals NO return damage — go full offense!\nRally leaders: start when most members are online."
+    },
+    {
+      "name": "Sanctuary Battle",
+      "emoji": "🏛️",
+      "cycle_day_start": 3,
+      "duration_days": 1,
+      "type": "alliance",
+      "recurring_every_days": 3,
+      "reminder": "Sanctuary Battle today!\nCheck your alliance's voted battle time and be online and ready!"
+    }
+  ]
+}
