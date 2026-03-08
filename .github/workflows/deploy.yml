@@ -77,7 +77,7 @@ jobs:
 
   build-and-deploy:
     name: Build & Deploy
-    runs-on: [self-hosted, linux, okd]
+    runs-on: [self-hosted, linux]
     needs: [validate, security-scan]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     environment: production
