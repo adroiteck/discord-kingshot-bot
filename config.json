@@ -10,30 +10,192 @@
     {
       "name": "daily_reminder",
       "channel": "announcements",
-      "message": "⚔️ **Daily Reminder** — Don't forget to collect your daily rewards, train troops, and check alliance gifts!",
+      "message": "⚔️ **Daily Reminder** — Collect daily rewards, train troops, check alliance gifts, and complete daily missions!",
       "cron": "0 9 * * *",
-      "enabled": true
-    },
-    {
-      "name": "war_prep",
-      "channel": "war-planning",
-      "message": "🏰 **War Prep Reminder** — War starts in 2 hours! Make sure your troops are healed and your rally leaders are online. Check #war-schedule for details.",
-      "cron": "0 18 * * 3,6",
       "enabled": true
     },
     {
       "name": "weekly_tips",
       "channel": "hero-guides",
-      "message": "📖 **Weekly Tip** — Remember to optimize your survivor roles! Reassign workers based on what you're building this week. Share your setups below!",
+      "message": "📖 **Weekly Tip** — Optimize your survivor roles! Reassign workers based on what you're building this week. Share your setups below!",
       "cron": "0 12 * * 1",
       "enabled": true
     },
+
     {
-      "name": "alliance_brawl_reminder",
+      "name": "strongest_governor_start",
+      "channel": "announcements",
+      "message": "👑 **Strongest Governor Starts Today!** (7-day event)\n\n📋 **Daily Schedule:**\nDay 1: City Construction\nDay 2: Hero Development\nDay 3: Basic Skills Up\nDay 4: Combat Training\nDay 5: Basic Skills Up\nDay 6: Combat Training\nDay 7: Hero Development\n\n⏰ Daily reset at 00:00 UTC. Hoard speedups & resources beforehand!\nUse `!event strongest_governor` for the full guide.",
+      "cron": "0 8 * * 1",
+      "enabled": false,
+      "notes": "Enable when SG week starts — occurs monthly (Week 1 of 4-week cycle)"
+    },
+    {
+      "name": "strongest_governor_daily",
+      "channel": "announcements",
+      "message": "👑 **Strongest Governor** — New daily stage resets at 00:00 UTC! Push your points before the day ends. Check today's task focus and plan accordingly.",
+      "cron": "0 9 * * 2,3,4,5,6,0",
+      "enabled": false,
+      "notes": "Enable during SG week only"
+    },
+
+    {
+      "name": "alliance_brawl_start",
+      "channel": "announcements",
+      "message": "💥 **Alliance Brawl Starts Today!** (7-day event)\n\n📋 **Daily Stages & Horn Values:**\nDay 1: Rise of the City (1 horn)\nDay 2: Hero Development (2 horns)\nDay 3: Pet Training (2 horns)\nDay 4: Gear Enhancement (2 horns)\nDay 5: Trade Baron (2 horns)\nDay 6: Full-Scale Competition (4 horns!) ← DECISIVE DAY\n\n⚠️ Day 6 alone can decide the entire Brawl! Save your best push for it.\nUse `!event alliance_brawl` for the full guide.",
+      "cron": "0 8 * * 1",
+      "enabled": false,
+      "notes": "Enable when Brawl week starts — occurs monthly (Week 2 of 4-week cycle)"
+    },
+    {
+      "name": "alliance_brawl_daily",
       "channel": "alliance-brawl",
-      "message": "💥 **Alliance Brawl Incoming!** — Make sure you're signed up and ready. Coordinate with your team in voice chat!",
-      "cron": "0 17 * * 5",
-      "enabled": false
+      "message": "💥 **Alliance Brawl** — New stage today! Check the current challenge and coordinate with your team. Push hard!",
+      "cron": "0 9 * * 2,3,4,5,6",
+      "enabled": false,
+      "notes": "Enable during Brawl week only"
+    },
+    {
+      "name": "alliance_brawl_finale",
+      "channel": "announcements",
+      "message": "🔥🔥🔥 **ALLIANCE BRAWL DAY 6 — FINALE!** 🔥🔥🔥\n\nThis is worth **4 HORNS** — more than any other day! This can decide the entire Brawl.\n\n⚡ **GO ALL OUT** — use your best speedups, resources, and boosts NOW!\nCoordinate in voice chat. Every point counts!",
+      "cron": "0 8 * * 6",
+      "enabled": false,
+      "notes": "Enable on Brawl Day 6 (Saturday of Brawl week)"
+    },
+
+    {
+      "name": "swordland_showdown_voting",
+      "channel": "announcements",
+      "message": "⚔️ **Swordland Showdown — Voting Phase Started!** (2 days)\n\nAlliance members: vote for your preferred battle time NOW!\nOfficers will register based on the most popular time slot.\n\n📅 Schedule: Voting (2d) → Registration (2d) → Matchmaking (2d) → Battle (1hr)\nUse `!event swordland_showdown` for the full guide.",
+      "cron": "0 8 * * 1",
+      "enabled": false,
+      "notes": "Enable when SLS voting starts — occurs bi-weekly (every 14 days)"
+    },
+    {
+      "name": "swordland_showdown_battle",
+      "channel": "announcements",
+      "message": "⚔️ **SWORDLAND SHOWDOWN BATTLE TODAY!** (1 hour)\n\n🏰 Rush priority: Stables → Swordshrine → Sanctums\n🛡️ Losses on the battlefield do NOT affect your city troops!\n\nBe online and ready. Coordinate rally leaders in voice chat!",
+      "cron": "0 12 * * 0",
+      "enabled": false,
+      "notes": "Enable on SLS battle day — adjust time to match your alliance vote"
+    },
+
+    {
+      "name": "all_out_kill_event",
+      "channel": "announcements",
+      "message": "💀 **ALL OUT (Kill Event) Starts Today!** (2 days)\n\n⚠️ **SHIELD UP if you're not participating!**\n\nKill points from enemy troops earn individual & alliance rewards.\nCoordinate rallies, flag targets, and stay in comms!\nUse `!event all_out` for hero/troop recommendations.",
+      "cron": "0 8 * * 5",
+      "enabled": false,
+      "notes": "Enable on KE week — occurs in Week 4 of cycle"
+    },
+
+    {
+      "name": "kvk_matchmaking",
+      "channel": "announcements",
+      "message": "🌍 **Kingdom of Power (KvK) — Matchmaking Started!** (2 days)\n\n📅 **Phase Schedule:**\nMatchmaking: Sat-Sun\nPreparation: 5 days (scout enemy kingdoms!)\nBattle: 12 hours (borders open 10:00-22:00 UTC, castle siege at 12:00 UTC)\n\nStart prepping NOW — heal troops, stock resources, coordinate with kingdom chat!\nUse `!event kvk` for the full guide.",
+      "cron": "0 8 * * 6",
+      "enabled": false,
+      "notes": "Enable when KvK matchmaking begins — occurs every 4 weeks"
+    },
+    {
+      "name": "kvk_battle_day",
+      "channel": "announcements",
+      "message": "🌍🔥 **KvK BATTLE DAY!** 🔥🌍\n\n⏰ **Cross-Kingdom Borders Open: 10:00 UTC**\n⏰ **Castle Siege Begins: 12:00 UTC**\n⏰ **Borders Close: 22:00 UTC**\n\nAll hands on deck! Rally leaders get ready. This is what we've been prepping for!",
+      "cron": "0 9 * * *",
+      "enabled": false,
+      "notes": "Enable on KvK battle day ONLY — manually enable/disable"
+    },
+
+    {
+      "name": "sanctuary_battle",
+      "channel": "war-planning",
+      "message": "🏛️ **Sanctuary Battle Reminder!**\n\nCheck your alliance's voted battle time (options: 03:00, 09:00, 13:00, 14:00, or 17:00 UTC).\nMake sure you're online and ready before it starts!\n\nUse `!event sanctuary` for strategy tips.",
+      "cron": "0 8 * * 3,6",
+      "enabled": true,
+      "notes": "Sanctuary battles happen on voted days — adjust cron as needed"
+    },
+
+    {
+      "name": "bear_hunt_reminder",
+      "channel": "announcements",
+      "message": "🐻 **Bear Hunt (Pitfall) Available!**\n\nThe trap lasts 30 minutes — maximize alliance damage for better rewards!\nGo full offense — the bear deals NO return damage.\nRally leaders: start the hunt when most members are online.\n\nUse `!event bear_hunt` for the full guide.",
+      "cron": "0 17 * * 2,4,6",
+      "enabled": true,
+      "notes": "Bear Hunt available every 2 days — adjust to your alliance schedule"
+    },
+
+    {
+      "name": "fishing_event",
+      "channel": "announcements",
+      "message": "🎣 **Fishing Event Active!** New attempt every 3 hours.\n\nDon't forget to cast your line and collect points for rewards!",
+      "cron": "0 9 * * 1",
+      "enabled": false,
+      "notes": "Enable during Fishing event weeks"
+    },
+    {
+      "name": "merchant_empire",
+      "channel": "announcements",
+      "message": "🐫 **Merchant Empire Active!** (7-day trading event)\n\nSend caravans, escort allies, raid enemies. Max 4 caravans/day.\nUse `!event merchant_empire` for the full guide.",
+      "cron": "0 9 * * 1",
+      "enabled": false,
+      "notes": "Enable when Merchant Empire starts — runs concurrently with Brawl"
+    },
+    {
+      "name": "desert_trial",
+      "channel": "announcements",
+      "message": "🏜️ **Desert Trial / Champion's Way Active!**\n\nDefeat Elite Rebels for points and rewards. Coordinate with alliance for rally targets!",
+      "cron": "0 9 * * 4",
+      "enabled": false,
+      "notes": "Enable during Desert Trial weeks"
+    },
+    {
+      "name": "hall_of_governors",
+      "channel": "announcements",
+      "message": "🏆 **Hall of Governors Active!** (3-day event, every 2 weeks)\n\nCompete in rankings for Mythic Hero shards! Push your power and activity.",
+      "cron": "0 9 * * 0",
+      "enabled": false,
+      "notes": "Enable bi-weekly when HoG starts"
+    },
+    {
+      "name": "armament_competition",
+      "channel": "announcements",
+      "message": "🔨 **Armament Competition Active!** (2-day equipment enhancement event)\n\nEnhance and forge gear for points. Save your gear materials for this!",
+      "cron": "0 9 * * 4",
+      "enabled": false,
+      "notes": "Enable during Armament Competition"
+    },
+    {
+      "name": "hall_of_heroes",
+      "channel": "announcements",
+      "message": "🦸 **Hall of Heroes Active!** (3-day Mythic Hero unlock event)\n\nCollect hero shards and unlock powerful heroes. Check the hero pool this rotation!",
+      "cron": "0 9 * * 5",
+      "enabled": false,
+      "notes": "Enable weekly when HoH starts"
+    },
+    {
+      "name": "golden_glaives",
+      "channel": "announcements",
+      "message": "✨ **Golden Glaives Active!** Complete Intel Missions for collection rewards.",
+      "cron": "0 9 * * 3",
+      "enabled": false,
+      "notes": "Enable during Golden Glaives event"
+    },
+    {
+      "name": "champagne_fair",
+      "channel": "announcements",
+      "message": "🍾 **Champagne Fair Active!** Trade hero shards with other governors. Check for rare heroes you need!",
+      "cron": "0 9 * * 4",
+      "enabled": false,
+      "notes": "Enable during Champagne Fair"
+    },
+    {
+      "name": "officer_project",
+      "channel": "officer-chat",
+      "message": "📋 **Officer Project Active!** Post-Truegold milestone event. Coordinate officer tasks.",
+      "cron": "0 9 * * 6",
+      "enabled": false,
+      "notes": "Enable during Officer Project events"
     }
   ]
 }
