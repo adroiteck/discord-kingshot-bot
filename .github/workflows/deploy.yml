@@ -2,7 +2,7 @@ name: Build & Deploy Kingshot Bot
 
 on:
   push:
-    branches: [main]
+    branches: [Main]
     paths:
       - 'bot.py'
       - 'config.json'
@@ -11,7 +11,7 @@ on:
       - 'okd/**'
       - '.github/workflows/deploy.yml'
   pull_request:
-    branches: [main]
+    branches: [Main]
   workflow_dispatch:
     inputs:
       deploy_only:
