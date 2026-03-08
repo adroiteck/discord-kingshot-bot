@@ -1,0 +1,22 @@
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kingshot-bot
+  namespace: bots
+  labels:
+    app.kubernetes.io/name: kingshot-bot
+    app.kubernetes.io/component: discord-bot
+    app.kubernetes.io/managed-by: github-actions
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: kingshot-bot:latest
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  triggers: []

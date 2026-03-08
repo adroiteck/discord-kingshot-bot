@@ -1,0 +1,11 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bots
+  labels:
+    app.kubernetes.io/managed-by: github-actions
+    purpose: bots-and-misc
+  annotations:
+    openshift.io/description: "Namespace for Discord bots and miscellaneous services"
+    openshift.io/display-name: "Bots & Misc"

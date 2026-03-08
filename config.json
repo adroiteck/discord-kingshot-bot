@@ -1,0 +1,39 @@
+{
+  "bot_token": "ENV",
+  "guild_id": "1461477485911871542",
+  "announcement_channel": "announcements",
+  "welcome_channel": "welcome",
+  "officer_channel": "officer-chat",
+  "default_member_role": "Member",
+  "recruit_role": "Recruit",
+  "scheduled_announcements": [
+    {
+      "name": "daily_reminder",
+      "channel": "announcements",
+      "message": "⚔️ **Daily Reminder** — Don't forget to collect your daily rewards, train troops, and check alliance gifts!",
+      "cron": "0 9 * * *",
+      "enabled": true
+    },
+    {
+      "name": "war_prep",
+      "channel": "war-planning",
+      "message": "🏰 **War Prep Reminder** — War starts in 2 hours! Make sure your troops are healed and your rally leaders are online. Check #war-schedule for details.",
+      "cron": "0 18 * * 3,6",
+      "enabled": true
+    },
+    {
+      "name": "weekly_tips",
+      "channel": "hero-guides",
+      "message": "📖 **Weekly Tip** — Remember to optimize your survivor roles! Reassign workers based on what you're building this week. Share your setups below!",
+      "cron": "0 12 * * 1",
+      "enabled": true
+    },
+    {
+      "name": "alliance_brawl_reminder",
+      "channel": "alliance-brawl",
+      "message": "💥 **Alliance Brawl Incoming!** — Make sure you're signed up and ready. Coordinate with your team in voice chat!",
+      "cron": "0 17 * * 5",
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kingshot-bot
+  namespace: bots
+  labels:
+    app.kubernetes.io/name: kingshot-bot
+    app.kubernetes.io/component: discord-bot
+    app.kubernetes.io/managed-by: github-actions
+spec:
+  lookupPolicy:
+    local: true

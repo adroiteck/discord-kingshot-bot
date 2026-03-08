@@ -1,0 +1,61 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kingshot-bot
+  namespace: bots
+  labels:
+    app.kubernetes.io/name: kingshot-bot
+    app.kubernetes.io/component: discord-bot
+    app.kubernetes.io/managed-by: github-actions
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Only 1 bot instance should connect to Discord gateway
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kingshot-bot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kingshot-bot
+        app.kubernetes.io/component: discord-bot
+    spec:
+      containers:
+        - name: bot
+          image: image-registry.openshift-image-registry.svc:5000/bots/kingshot-bot:latest
+          imagePullPolicy: Always
+          env:
+            - name: DISCORD_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: kingshot-bot-secret
+                  key: DISCORD_BOT_TOKEN
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: kingshot-bot-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: kingshot-bot-data
+      restartPolicy: Always
