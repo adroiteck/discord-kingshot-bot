@@ -794,7 +794,7 @@ async def random_tip(ctx: commands.Context):
 # =========================================================================
 # !timers — View active timers
 # =========================================================================
-@bot.command(name="timers")
+@bot.command(name="timers", aliases=["timer"])
 async def view_timers(ctx: commands.Context):
     """View active event timers."""
     active = [t for t in war_timers.get("timers", []) if datetime.fromisoformat(t["time"]) > datetime.utcnow()]
