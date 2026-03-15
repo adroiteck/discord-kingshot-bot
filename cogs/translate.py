@@ -1,6 +1,7 @@
 """Translate cog — auto-detect and translate messages for international guilds."""
+import asyncio
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import logging
 import re
@@ -258,6 +259,123 @@ class Translate(commands.Cog):
                 await message.add_reaction("🌐")
             except Exception:
                 pass  # Missing permissions or similar
+
+
+    # --- One-time feature announcement ---
+    def start_tasks(self):
+        """Called from bot.py after cog is loaded."""
+        self._announce_feature.start()
+
+    @tasks.loop(count=1)
+    async def _announce_feature(self):
+        """Post the translate feature announcement once, then never again."""
+        await self.bot.wait_until_ready()
+        await asyncio.sleep(5)  # Wait for guild cache to populate
+
+        announce_data = load_data("translate_announced", {"done": False})
+        if announce_data.get("done"):
+            return
+
+        guild = self.bot.guilds[0] if self.bot.guilds else None
+        if not guild:
+            return
+
+        # --- Post to #announcements ---
+        ann_ch = discord.utils.get(guild.text_channels, name="announcements")
+        if ann_ch:
+            embed = discord.Embed(
+                title="🌐 NEW: Auto-Translate is Here!",
+                description=(
+                    "Our guild has members from all over the world — now the bot "
+                    "can translate messages instantly so everyone can communicate!\n\n"
+                ),
+                color=discord.Color.blue(),
+            )
+            embed.add_field(
+                name="🏳️ Flag Reactions",
+                value=(
+                    "React with a country flag on any message to translate it:\n"
+                    "🇪🇸 Spanish • 🇫🇷 French • 🇩🇪 German • 🇯🇵 Japanese\n"
+                    "🇰🇷 Korean • 🇧🇷 Portuguese • 🇷🇺 Russian • 🇨🇳 Chinese\n"
+                    "...and 25+ more languages!"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="🌐 Personal Language",
+                value=(
+                    "Set your preferred language with `/setlang`\n"
+                    "Then just react with 🌐 on any message to translate it to YOUR language!"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="💬 Manual Translate",
+                value="Use `/translate to:es text:Hello everyone!` to translate any text on demand.",
+                inline=False,
+            )
+            embed.add_field(
+                name="📖 All Languages",
+                value="Type `/languages` to see every supported language code.",
+                inline=False,
+            )
+            embed.set_footer(text="Translations auto-delete after 60s to keep chat clean")
+            try:
+                await ann_ch.send(embed=embed)
+                log.info("Posted translate feature announcement to #announcements")
+            except Exception as e:
+                log.error(f"Failed to post translate announcement: {e}")
+
+        # --- Post to #bot-guide ---
+        guide_ch = discord.utils.get(guild.text_channels, name="bot-guide")
+        if guide_ch:
+            guide_embed = discord.Embed(
+                title="🌐 Translation Commands",
+                description="Communicate across languages — translate messages in real time!",
+                color=discord.Color.blue(),
+            )
+            guide_embed.add_field(
+                name="/translate",
+                value="`/translate to:<lang> text:<message>`\nTranslate any text to a supported language.\nExample: `/translate to:es text:Let's rally at 12:00 UTC!`",
+                inline=False,
+            )
+            guide_embed.add_field(
+                name="/setlang",
+                value="`/setlang <language>`\nSet your preferred language. Then react 🌐 on any message to translate it.\nExample: `/setlang ko` → react 🌐 → instant Korean translation\nUse `/setlang off` to remove.",
+                inline=False,
+            )
+            guide_embed.add_field(
+                name="/languages",
+                value="View all 30+ supported language codes.",
+                inline=False,
+            )
+            guide_embed.add_field(
+                name="🏳️ Flag Reactions",
+                value=(
+                    "React with a country flag emoji on any message to translate:\n"
+                    "🇺🇸🇬🇧 English • 🇪🇸🇲🇽 Spanish • 🇫🇷 French • 🇩🇪 German\n"
+                    "🇮🇹 Italian • 🇵🇹🇧🇷 Portuguese • 🇷🇺 Russian • 🇨🇳 Chinese\n"
+                    "🇯🇵 Japanese • 🇰🇷 Korean • 🇮🇳 Hindi • 🇸🇦 Arabic\n"
+                    "🇹🇷 Turkish • 🇹🇭 Thai • 🇻🇳 Vietnamese • 🇮🇩 Indonesian\n"
+                    "🇵🇱 Polish • 🇳🇱 Dutch • 🇸🇪 Swedish • 🇺🇦 Ukrainian\n"
+                    "...and more!"
+                ),
+                inline=False,
+            )
+            guide_embed.add_field(
+                name="🌐 Auto-Detect",
+                value="The bot auto-adds a 🌐 reaction to non-English messages as a translate hint.",
+                inline=False,
+            )
+            guide_embed.set_footer(text="Translated replies auto-delete after 60s to keep chat clean")
+            try:
+                await guide_ch.send(embed=guide_embed)
+                log.info("Posted translate guide to #bot-guide")
+            except Exception as e:
+                log.error(f"Failed to post translate guide: {e}")
+
+        # Mark as done so it never fires again
+        save_data("translate_announced", {"done": True})
 
 
 async def setup(bot):

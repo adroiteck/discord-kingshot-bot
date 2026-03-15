@@ -91,15 +91,16 @@ async def on_ready():
             log.error(f"Failed to load extension {ext}: {e}")
 
     # Start background tasks from cogs that have them
-    for cog_name in ("Tasks", "GameAPI"):
+    for cog_name in ("Tasks", "GameAPI", "Translate"):
         cog = bot.get_cog(cog_name)
         if cog and hasattr(cog, "start_tasks"):
             cog.start_tasks()
             log.info(f"{cog_name} background tasks started")
 
-    # Sync slash commands to guild (no copy_global_to — prevents duplicates)
+    # Copy global hybrid commands to guild tree, then sync for instant availability
     try:
         guild_obj = discord.Object(id=int(config.get("guild_id", "0")))
+        bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
         log.info(f"Synced {len(synced)} slash command(s) to guild {config.get('guild_id')}")
     except Exception as e:
