@@ -18,20 +18,23 @@ Requirements:
 Usage:
   1. Set your bot token in config.json
   2. Run: python bot.py
-  3. Use !setup in your server to create all channels and roles
+  3. Use /setup in your server to create all channels and roles
 """
 
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+from typing import List, Optional
 import json
 import asyncio
 import logging
 import random
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
+from zoneinfo import ZoneInfo, available_timezones
+from discord.ui import View, Button, Select, button, select
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -67,6 +70,15 @@ def save_data(name, data):
 
 config = load_config()
 
+
+def _utc_from_iso(iso_str: str) -> datetime:
+    """Parse an ISO datetime string and ensure it's UTC-aware."""
+    dt = datetime.fromisoformat(iso_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 # Load event cycle data
 EVENT_CYCLE_PATH = Path(__file__).parent / "event_cycle.json"
 def load_event_cycle():
@@ -78,9 +90,9 @@ def load_event_cycle():
 def get_cycle_day(dt=None):
     """Get the current day in the event cycle (0-27)."""
     cycle = load_event_cycle()
-    anchor = datetime.strptime(cycle["cycle_anchor"], "%Y-%m-%d")
+    anchor = datetime.strptime(cycle["cycle_anchor"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
     if dt is None:
-        dt = datetime.utcnow()
+        dt = datetime.now(timezone.utc)
     delta = (dt - anchor).days
     return delta % cycle.get("cycle_length_days", 28)
 
@@ -117,7 +129,7 @@ def get_upcoming_events(days_ahead=7, dt=None):
     cycle = load_event_cycle()
     cycle_len = cycle.get("cycle_length_days", 28)
     if dt is None:
-        dt = datetime.utcnow()
+        dt = datetime.now(timezone.utc)
     today = get_cycle_day(dt)
     upcoming = []
     for ev in cycle.get("events", []):
@@ -160,7 +172,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+bot = commands.Bot(command_prefix="/", intents=intents, help_command=None)
 
 # ---------------------------------------------------------------------------
 # In-memory stores
@@ -169,6 +181,11 @@ gift_codes = load_data("gift_codes", {"codes": []})
 user_profiles = load_data("profiles", {})
 war_timers = load_data("war_timers", {"timers": []})
 daily_tips = load_data("daily_tips", {"tips": []})
+user_timezones = load_data("user_timezones", {})
+war_signups = load_data("war_signups", {"signups": []})
+power_history = load_data("power_history", {})
+reminder_optins = load_data("reminder_optins", {"users": []})
+last_announcement_fires = {}
 
 # ---------------------------------------------------------------------------
 # Role colors
@@ -185,6 +202,239 @@ ROLE_COLORS = {
 LEADER_ROLES = ["R5 | Alliance Leader", "R4 | Leadership"]
 OFFICER_ROLES = ["R5 | Alliance Leader", "R4 | Leadership"]
 WAR_ROLES = ["R5 | Alliance Leader", "R4 | Leadership", "R3 | TC25+"]
+
+# ---------------------------------------------------------------------------
+# UI Views & Components
+# ---------------------------------------------------------------------------
+
+class ConfirmView(View):
+    """Confirmation dialog with Confirm/Cancel buttons."""
+    def __init__(self):
+        super().__init__()
+        self.confirmed = False
+
+    @button(label="Confirm", style=discord.ButtonStyle.danger)
+    async def confirm_button(self, interaction: discord.Interaction, button: Button):
+        self.confirmed = True
+        await interaction.response.defer()
+        self.stop()
+
+    @button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: Button):
+        self.confirmed = False
+        await interaction.response.defer()
+        self.stop()
+
+
+class EventSelectView(View):
+    """Dropdown menu to select and view event guides."""
+    def __init__(self, event_guides: dict):
+        super().__init__()
+        self._event_guides = event_guides
+        options = [
+            discord.SelectOption(label=f"{ev['emoji']} {ev['name']}", value=key)
+            for key, ev in event_guides.items()
+        ]
+        sel = Select(
+            placeholder="Choose an event to view...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+        sel.callback = self._select_callback
+        self.add_item(sel)
+
+    async def _select_callback(self, interaction: discord.Interaction):
+        key = interaction.data["values"][0]
+        ev = self._event_guides[key]
+        embed = discord.Embed(
+            title=f"{ev['emoji']} {ev['name']} — Complete Guide",
+            description=ev["summary"],
+            color=ev["color"],
+        )
+        embed.add_field(name="🦸 Recommended Heroes", value=ev["heroes"], inline=False)
+        embed.add_field(name="🪖 Troop Composition", value=ev["troops"], inline=False)
+        embed.add_field(name="💡 Pro Tips", value=ev["tips"], inline=False)
+        embed.set_footer(text=f"Use /heroes {key} or /troops {key} for quick lookups")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class RallyView(View):
+    """Rally call with Join/Can't Make It buttons."""
+    def __init__(self):
+        super().__init__()
+        self.joined = []
+        self.declined = []
+
+    @button(label="✅ Join Rally", style=discord.ButtonStyle.success)
+    async def join_button(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id not in self.joined:
+            self.joined.append(interaction.user.id)
+        if interaction.user.id in self.declined:
+            self.declined.remove(interaction.user.id)
+        await interaction.response.defer()
+
+    @button(label="❌ Can't Make It", style=discord.ButtonStyle.danger)
+    async def decline_button(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id not in self.declined:
+            self.declined.append(interaction.user.id)
+        if interaction.user.id in self.joined:
+            self.joined.remove(interaction.user.id)
+        await interaction.response.defer()
+
+
+class PaginatorView(View):
+    """Paginated embed with Previous/Next buttons and page counter."""
+    def __init__(self, embeds: List[discord.Embed]):
+        super().__init__()
+        self.embeds = embeds
+        self.current_page = 0
+
+    @button(label="◀️", style=discord.ButtonStyle.gray)
+    async def prev_button(self, interaction: discord.Interaction, button: Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            await interaction.response.edit_message(
+                embed=self.embeds[self.current_page],
+                view=self
+            )
+        else:
+            await interaction.response.defer()
+
+    @button(label="▶️", style=discord.ButtonStyle.gray)
+    async def next_button(self, interaction: discord.Interaction, button: Button):
+        if self.current_page < len(self.embeds) - 1:
+            self.current_page += 1
+            await interaction.response.edit_message(
+                embed=self.embeds[self.current_page],
+                view=self
+            )
+        else:
+            await interaction.response.defer()
+
+    async def on_timeout(self):
+        # Remove buttons when interaction expires
+        pass
+
+
+class WarSignupView(View):
+    """War signup buttons for tracking attendance."""
+    def __init__(self, event_name: str):
+        super().__init__()
+        self.event_name = event_name
+        self.confirmed = []
+        self.declined = []
+        self.maybe = []
+
+    @button(label="✅ Sign Up", style=discord.ButtonStyle.success)
+    async def signup_button(self, interaction: discord.Interaction, button: Button):
+        uid = interaction.user.id
+        if uid not in self.confirmed:
+            self.confirmed.append(uid)
+        if uid in self.declined:
+            self.declined.remove(uid)
+        if uid in self.maybe:
+            self.maybe.remove(uid)
+        await interaction.response.defer()
+
+    @button(label="❌ Can't Make It", style=discord.ButtonStyle.danger)
+    async def decline_button(self, interaction: discord.Interaction, button: Button):
+        uid = interaction.user.id
+        if uid not in self.declined:
+            self.declined.append(uid)
+        if uid in self.confirmed:
+            self.confirmed.remove(uid)
+        if uid in self.maybe:
+            self.maybe.remove(uid)
+        await interaction.response.defer()
+
+    @button(label="❓ Maybe", style=discord.ButtonStyle.blurple)
+    async def maybe_button(self, interaction: discord.Interaction, button: Button):
+        uid = interaction.user.id
+        if uid not in self.maybe:
+            self.maybe.append(uid)
+        if uid in self.confirmed:
+            self.confirmed.remove(uid)
+        if uid in self.declined:
+            self.declined.remove(uid)
+        await interaction.response.defer()
+
+
+class RolePanelView(View):
+    """Persistent role selection buttons."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @button(label="R5 | Alliance Leader", style=discord.ButtonStyle.primary, custom_id="role_r5")
+    async def r5_button(self, interaction: discord.Interaction, button: Button):
+        guild = interaction.guild
+        role = discord.utils.get(guild.roles, name="R5 | Alliance Leader")
+        if role:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message("❌ Removed **R5 | Alliance Leader**", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Added **R5 | Alliance Leader**", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Role not found", ephemeral=True)
+
+    @button(label="R4 | Leadership", style=discord.ButtonStyle.primary, custom_id="role_r4")
+    async def r4_button(self, interaction: discord.Interaction, button: Button):
+        guild = interaction.guild
+        role = discord.utils.get(guild.roles, name="R4 | Leadership")
+        if role:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message("❌ Removed **R4 | Leadership**", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Added **R4 | Leadership**", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Role not found", ephemeral=True)
+
+    @button(label="R3 | TC25+", style=discord.ButtonStyle.primary, custom_id="role_r3")
+    async def r3_button(self, interaction: discord.Interaction, button: Button):
+        guild = interaction.guild
+        role = discord.utils.get(guild.roles, name="R3 | TC25+")
+        if role:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message("❌ Removed **R3 | TC25+**", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Added **R3 | TC25+**", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Role not found", ephemeral=True)
+
+    @button(label="R2 | TC24-", style=discord.ButtonStyle.primary, custom_id="role_r2")
+    async def r2_button(self, interaction: discord.Interaction, button: Button):
+        guild = interaction.guild
+        role = discord.utils.get(guild.roles, name="R2 | TC24-")
+        if role:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message("❌ Removed **R2 | TC24-**", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Added **R2 | TC24-**", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Role not found", ephemeral=True)
+
+    @button(label="R1 | Bear Bait", style=discord.ButtonStyle.primary, custom_id="role_r1")
+    async def r1_button(self, interaction: discord.Interaction, button: Button):
+        guild = interaction.guild
+        role = discord.utils.get(guild.roles, name="R1 | Bear Bait")
+        if role:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message("❌ Removed **R1 | Bear Bait**", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Added **R1 | Bear Bait**", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Role not found", ephemeral=True)
+
 
 # ---------------------------------------------------------------------------
 # Event Guides Database
@@ -302,13 +552,19 @@ DEFAULT_TIPS = [
 async def on_ready():
     log.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
     log.info(f"Connected to {len(bot.guilds)} guild(s)")
+
+    # Register persistent views for role panel
+    bot.add_view(RolePanelView())
+
     scheduled_announcements.start()
     daily_tip_task.start()
     timer_check.start()
     event_cycle_reminder.start()
     try:
-        synced = await bot.tree.sync()
-        log.info(f"Synced {len(synced)} slash command(s)")
+        guild_obj = discord.Object(id=int(config.get("guild_id", "0")))
+        bot.tree.copy_global_to(guild=guild_obj)
+        synced = await bot.tree.sync(guild=guild_obj)
+        log.info(f"Synced {len(synced)} slash command(s) to guild {config.get('guild_id')}")
     except Exception as e:
         log.error(f"Failed to sync commands: {e}")
 
@@ -344,7 +600,7 @@ async def on_member_join(member: discord.Member):
                 "Glad to have you — let's dominate! 🏰"
             ),
             color=discord.Color.green(),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await welcome_ch.send(embed=embed)
@@ -358,9 +614,9 @@ async def on_member_join(member: discord.Member):
 
 
 # =========================================================================
-# !help — Custom help command
+# /help — Custom help command
 # =========================================================================
-@bot.command(name="help")
+@bot.hybrid_command(name="help")
 async def help_command(ctx: commands.Context):
     """Show all available bot commands organized by category."""
     embed = discord.Embed(
@@ -372,10 +628,10 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="📚 Event Guides (Everyone)",
         value=(
-            "`!event <name>` — Get full guide for any event\n"
-            "`!events` — List all available event guides\n"
-            "`!heroes <event>` — Quick hero picks for an event\n"
-            "`!troops <event>` — Quick troop comp for an event"
+            "`/event <name>` — Get full guide for any event\n"
+            "`/events` — List all available event guides\n"
+            "`/heroes <event>` — Quick hero picks for an event\n"
+            "`/troops <event>` — Quick troop comp for an event"
         ),
         inline=False,
     )
@@ -383,12 +639,12 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="👤 Profile & Info (Everyone)",
         value=(
-            "`!profile` — View your server profile\n"
-            "`!setpower <number>` — Set your power level\n"
-            "`!setign <name>` — Set your in-game name\n"
-            "`!memberinfo [@user]` — View someone's info\n"
-            "`!serverinfo` — Server statistics\n"
-            "`!leaderboard` — Power leaderboard"
+            "`/profile` — View your server profile\n"
+            "`/setpower <number>` — Set your power level\n"
+            "`/setign <name>` — Set your in-game name\n"
+            "`/memberinfo [@user]` — View someone's info\n"
+            "`/serverinfo` — Server statistics\n"
+            "`/leaderboard` — Power leaderboard"
         ),
         inline=False,
     )
@@ -396,9 +652,9 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="🎁 Gift Codes (Everyone)",
         value=(
-            "`!codes` — View all active gift codes\n"
-            "`!addcode <code> | <rewards>` — Submit a new code\n"
-            "`!expirecode <code>` — Mark a code as expired"
+            "`/codes` — View all active gift codes\n"
+            "`/addcode <code> | <rewards>` — Submit a new code\n"
+            "`/expirecode <code>` — Mark a code as expired"
         ),
         inline=False,
     )
@@ -406,9 +662,9 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="⏰ Timers & Reminders (Everyone)",
         value=(
-            "`!timers` — View active event timers\n"
-            "`!countdown <event>` — Quick countdown to next event\n"
-            "`!tip` — Get a random Kingshot tip"
+            "`/timers` — View active event timers\n"
+            "`/countdown <event>` — Quick countdown to next event\n"
+            "`/tip` — Get a random Kingshot tip"
         ),
         inline=False,
     )
@@ -416,10 +672,20 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="⚔️ War Commands 🔒",
         value=(
-            "`!rally <details>` — Send rally call (R3+)\n"
-            "`!warsched <text>` — Post war schedule (R3+)\n"
-            "`!settimer <name> | <time>` — Set event timer (R4+)\n"
-            "`!deltimer <name>` — Delete a timer (R4+)"
+            "`/rally <details>` — Send rally call (R3+)\n"
+            "`/warsched <text>` — Post war schedule (R3+)\n"
+            "`/settimer <name> | <time>` — Set event timer (R4+)\n"
+            "`/deltimer <name>` — Delete a timer (R4+)"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="🕐 Timezone (Everyone)",
+        value=(
+            "`/timezone <tz>` — Set your timezone (EST, PST, etc.)\n"
+            "`/localtime [time]` — Convert UTC to your local time\n"
+            "`/timezone` — View your current timezone"
         ),
         inline=False,
     )
@@ -427,9 +693,9 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="📢 Announcements 🔒",
         value=(
-            "`!announce <channel> <msg>` — Send announcement (R4+)\n"
-            "`!listannouncements` — View scheduled (R4+)\n"
-            "`!toggleannouncement <name>` — Toggle on/off (R4+)"
+            "`/announce <channel> <msg>` — Send announcement (R4+)\n"
+            "`/listannouncements` — View scheduled (R4+)\n"
+            "`/toggleannouncement <name>` — Toggle on/off (R4+)"
         ),
         inline=False,
     )
@@ -437,8 +703,8 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="👥 Role Management 🔒",
         value=(
-            "`!promote @user RoleName` — Give role (R4+)\n"
-            "`!demote @user RoleName` — Remove role (R4+)"
+            "`/promote @user RoleName` — Give role (R4+)\n"
+            "`/demote @user RoleName` — Remove role (R4+)"
         ),
         inline=False,
     )
@@ -446,49 +712,124 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="🛡️ Moderation 🔒",
         value=(
-            "`!kick @user [reason]` — Kick member\n"
-            "`!mute @user [minutes]` — Timeout member\n"
-            "`!unmute @user` — Remove timeout\n"
-            "`!clear [amount]` — Delete messages"
+            "`/kick @user [reason]` — Kick member\n"
+            "`/mute @user [minutes]` — Timeout member\n"
+            "`/unmute @user` — Remove timeout\n"
+            "`/clear [amount]` — Delete messages"
         ),
         inline=False,
     )
 
     embed.add_field(
         name="🔧 Admin 🔒",
-        value="`!setup` — Full server setup (Admin only)",
+        value="`/setup` — Full server setup (Admin only)",
         inline=False,
     )
 
-    embed.set_footer(text="Use !help in #bot-commands to keep other channels clean!")
-    await ctx.send(embed=embed)
+    embed.set_footer(text="Use /help in #bot-commands to keep other channels clean!")
+    await ctx.send(embed=embed, ephemeral=True)
 
 
 # =========================================================================
-# !events — List all available event guides
+# Autocomplete helpers for slash commands
 # =========================================================================
-@bot.command(name="events")
+async def event_name_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> List[app_commands.Choice[str]]:
+    """Autocomplete event names for slash commands."""
+    choices = []
+    for key, ev in EVENT_GUIDES.items():
+        if current.lower() in key or current.lower() in ev["name"].lower():
+            choices.append(app_commands.Choice(name=f"{ev['emoji']} {ev['name']}", value=key))
+    return choices[:25]
+
+
+async def timer_name_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> List[app_commands.Choice[str]]:
+    """Autocomplete active timer names."""
+    active = [t for t in war_timers.get("timers", []) if _utc_from_iso(t["time"]) > datetime.now(timezone.utc)]
+    choices = []
+    for t in active:
+        if current.lower() in t["name"].lower():
+            choices.append(app_commands.Choice(name=t["name"], value=t["name"]))
+    return choices[:25]
+
+
+async def timezone_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> List[app_commands.Choice[str]]:
+    """Autocomplete timezone names."""
+    common_tzs = [
+        ("EST (US Eastern)", "EST"), ("CST (US Central)", "CST"),
+        ("MST (US Mountain)", "MST"), ("PST (US Pacific)", "PST"),
+        ("GMT (London)", "GMT"), ("CET (Central Europe)", "CET"),
+        ("EET (Eastern Europe)", "EET"), ("MSK (Moscow)", "MSK"),
+        ("IST (India)", "IST"), ("JST (Japan)", "JST"),
+        ("KST (Korea)", "KST"), ("CST-Asia (China)", "CST-Asia"),
+        ("SGT (Singapore)", "SGT"), ("AEST (Australia)", "AEST"),
+        ("NZST (New Zealand)", "NZST"), ("BRT (Brazil)", "BRT"),
+        ("GST (Gulf/Dubai)", "GST"), ("PHT (Philippines)", "PHT"),
+        ("HKT (Hong Kong)", "HKT"), ("SAST (South Africa)", "SAST"),
+    ]
+    if not current:
+        return [app_commands.Choice(name=name, value=val) for name, val in common_tzs[:25]]
+    choices = [
+        app_commands.Choice(name=name, value=val)
+        for name, val in common_tzs if current.lower() in name.lower() or current.lower() in val.lower()
+    ]
+    # Also search IANA names if user types something specific
+    if len(choices) < 10 and len(current) >= 3:
+        for tz in sorted(available_timezones()):
+            if current.lower() in tz.lower():
+                city = tz.split("/")[-1].replace("_", " ")
+                choices.append(app_commands.Choice(name=f"{city} ({tz})", value=tz))
+                if len(choices) >= 25:
+                    break
+    return choices[:25]
+
+
+async def announcement_name_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> List[app_commands.Choice[str]]:
+    """Autocomplete announcement names."""
+    cfg = load_config()
+    choices = []
+    for ann in cfg.get("scheduled_announcements", []):
+        name = ann["name"]
+        if current.lower() in name.lower():
+            status = "ON" if ann.get("enabled") else "OFF"
+            choices.append(app_commands.Choice(name=f"{name} [{status}]", value=name))
+    return choices[:25]
+
+
+# =========================================================================
+# /events — List all available event guides (with dropdown)
+# =========================================================================
+@bot.hybrid_command(name="events")
 async def list_events(ctx: commands.Context):
-    """List all available event guides."""
+    """List all available event guides with interactive dropdown."""
     embed = discord.Embed(
         title="📅 Kingshot Event Guides",
-        description="Use `!event <name>` to get the full guide for any event.",
+        description="Select an event from the dropdown to view the full guide!",
         color=discord.Color.blue(),
     )
 
     event_list = ""
     for key, ev in EVENT_GUIDES.items():
-        event_list += f"{ev['emoji']} **{ev['name']}** — `!event {key}`\n"
+        event_list += f"{ev['emoji']} {ev['name']}\n"
 
     embed.add_field(name="Available Events", value=event_list, inline=False)
-    embed.set_footer(text="Tip: Use !heroes <event> or !troops <event> for quick lookups")
-    await ctx.send(embed=embed)
+    embed.set_footer(text="Tip: Use /heroes <event> or /troops <event> for quick lookups")
+    await ctx.send(embed=embed, view=EventSelectView(EVENT_GUIDES))
 
 
 # =========================================================================
-# !event <name> — Full event guide
+# /event <name> — Full event guide
 # =========================================================================
-@bot.command(name="event")
+@bot.hybrid_command(name="event")
+@app_commands.autocomplete(name=event_name_autocomplete)
+@app_commands.describe(name="The event to get a guide for")
 async def event_guide(ctx: commands.Context, *, name: str = ""):
     """Get the full guide for a specific event."""
     name = name.lower().strip()
@@ -514,14 +855,16 @@ async def event_guide(ctx: commands.Context, *, name: str = ""):
     embed.add_field(name="🦸 Recommended Heroes", value=ev["heroes"], inline=False)
     embed.add_field(name="🪖 Troop Composition", value=ev["troops"], inline=False)
     embed.add_field(name="💡 Pro Tips", value=ev["tips"], inline=False)
-    embed.set_footer(text=f"Use !heroes {key} or !troops {key} for quick lookups")
+    embed.set_footer(text=f"Use /heroes {key} or /troops {key} for quick lookups")
     await ctx.send(embed=embed)
 
 
 # =========================================================================
-# !heroes <event> — Quick hero recommendation
+# /heroes <event> — Quick hero recommendation
 # =========================================================================
-@bot.command(name="heroes")
+@bot.hybrid_command(name="heroes")
+@app_commands.autocomplete(name=event_name_autocomplete)
+@app_commands.describe(name="The event to get hero picks for")
 async def hero_picks(ctx: commands.Context, *, name: str = ""):
     """Quick hero picks for an event."""
     name = name.lower().strip()
@@ -534,13 +877,15 @@ async def hero_picks(ctx: commands.Context, *, name: str = ""):
             )
             await ctx.send(embed=embed)
             return
-    await ctx.send(f"❌ Event not found. Use `!events` to see all options.")
+    await ctx.send(f"❌ Event not found. Use `/events` to see all options.")
 
 
 # =========================================================================
-# !troops <event> — Quick troop comp
+# /troops <event> — Quick troop comp
 # =========================================================================
-@bot.command(name="troops")
+@bot.hybrid_command(name="troops")
+@app_commands.autocomplete(name=event_name_autocomplete)
+@app_commands.describe(name="The event to get troop composition for")
 async def troop_comp(ctx: commands.Context, *, name: str = ""):
     """Quick troop composition for an event."""
     name = name.lower().strip()
@@ -553,15 +898,17 @@ async def troop_comp(ctx: commands.Context, *, name: str = ""):
             )
             await ctx.send(embed=embed)
             return
-    await ctx.send(f"❌ Event not found. Use `!events` to see all options.")
+    await ctx.send(f"❌ Event not found. Use `/events` to see all options.")
 
 
 # =========================================================================
-# !profile — View your profile
+# /profile — View your profile
 # =========================================================================
-@bot.command(name="profile")
+@bot.hybrid_command(name="profile")
+@app_commands.describe(member="The member to view (leave empty for yourself)")
 async def profile(ctx: commands.Context, member: discord.Member = None):
     """View your profile or another member's profile."""
+    viewing_self = member is None
     member = member or ctx.author
     uid = str(member.id)
     data = user_profiles.get(uid, {})
@@ -569,22 +916,23 @@ async def profile(ctx: commands.Context, member: discord.Member = None):
     embed = discord.Embed(
         title=f"👤 {member.display_name}'s Profile",
         color=member.top_role.color if member.top_role.color != discord.Color.default() else discord.Color.blue(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     embed.set_thumbnail(url=member.display_avatar.url)
-    embed.add_field(name="🎮 In-Game Name", value=data.get("ign", "*Not set* — use `!setign`"), inline=True)
-    embed.add_field(name="⚡ Power", value=f"{data.get('power', 0):,}" if data.get("power") else "*Not set* — use `!setpower`", inline=True)
+    embed.add_field(name="🎮 In-Game Name", value=data.get("ign", "*Not set* — use `/setign`"), inline=True)
+    embed.add_field(name="⚡ Power", value=f"{data.get('power', 0):,}" if data.get("power") else "*Not set* — use `/setpower`", inline=True)
     embed.add_field(name="🏷️ Roles", value=", ".join(r.name for r in member.roles if r.name != "@everyone") or "None", inline=False)
     embed.add_field(name="📅 Joined", value=member.joined_at.strftime("%b %d, %Y") if member.joined_at else "Unknown", inline=True)
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, ephemeral=viewing_self)
 
 
 # =========================================================================
-# !setpower — Set your power level
+# /setpower — Set your power level
 # =========================================================================
-@bot.command(name="setpower")
+@bot.hybrid_command(name="setpower")
+@app_commands.describe(power="Your power level (e.g. 25m, 5000000, 1.2b)")
 async def set_power(ctx: commands.Context, power: str):
-    """Set your power level. Usage: !setpower 25000000 or !setpower 25m"""
+    """Set your power level. Usage: /setpower 25000000 or /setpower 25m"""
     # Parse power with k/m/b suffixes
     power = power.lower().replace(",", "")
     multiplier = 1
@@ -601,23 +949,36 @@ async def set_power(ctx: commands.Context, power: str):
     try:
         power_val = int(float(power) * multiplier)
     except ValueError:
-        await ctx.send("❌ Invalid power value. Examples: `!setpower 25m`, `!setpower 5000000`")
+        await ctx.send("❌ Invalid power value. Examples: `/setpower 25m`, `/setpower 5000000`")
         return
 
     uid = str(ctx.author.id)
     if uid not in user_profiles:
         user_profiles[uid] = {}
+
+    # Track power history
+    old_power = user_profiles[uid].get("power", 0)
+    if uid not in power_history:
+        power_history[uid] = []
+    power_history[uid].append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "old_power": old_power,
+        "new_power": power_val,
+    })
+    save_data("power_history", power_history)
+
     user_profiles[uid]["power"] = power_val
     save_data("profiles", user_profiles)
     await ctx.send(f"✅ Power set to **{power_val:,}**!")
 
 
 # =========================================================================
-# !setign — Set your in-game name
+# /setign — Set your in-game name
 # =========================================================================
-@bot.command(name="setign")
+@bot.hybrid_command(name="setign")
+@app_commands.describe(ign="Your in-game name")
 async def set_ign(ctx: commands.Context, *, ign: str):
-    """Set your in-game name. Usage: !setign MyPlayerName"""
+    """Set your in-game name. Usage: /setign MyPlayerName"""
     uid = str(ctx.author.id)
     if uid not in user_profiles:
         user_profiles[uid] = {}
@@ -627,11 +988,11 @@ async def set_ign(ctx: commands.Context, *, ign: str):
 
 
 # =========================================================================
-# !leaderboard — Power leaderboard
+# /leaderboard — Power leaderboard
 # =========================================================================
-@bot.command(name="leaderboard", aliases=["lb", "top"])
+@bot.hybrid_command(name="leaderboard", aliases=["lb", "top"])
 async def leaderboard(ctx: commands.Context):
-    """Show the alliance power leaderboard."""
+    """Show the alliance power leaderboard (paginated)."""
     ranked = sorted(
         [(uid, data) for uid, data in user_profiles.items() if data.get("power", 0) > 0],
         key=lambda x: x[1]["power"],
@@ -639,38 +1000,52 @@ async def leaderboard(ctx: commands.Context):
     )
 
     if not ranked:
-        await ctx.send("📊 No one has set their power yet! Use `!setpower <number>` to register.")
+        await ctx.send("📊 No one has set their power yet! Use `/setpower <number>` to register.")
         return
 
-    embed = discord.Embed(
-        title="🏆 Alliance Power Leaderboard",
-        color=discord.Color.gold(),
-    )
-
+    # Create embeds for pagination (10 entries per page)
+    embeds = []
     medals = ["🥇", "🥈", "🥉"]
-    lines = []
-    for i, (uid, data) in enumerate(ranked[:15]):
-        medal = medals[i] if i < 3 else f"**{i+1}.**"
-        name = data.get("ign", f"<@{uid}>")
-        power = f"{data['power']:,}"
-        lines.append(f"{medal} {name} — ⚡ {power}")
+    per_page = 10
 
-    embed.description = "\n".join(lines)
-    embed.set_footer(text=f"Total members tracked: {len(ranked)} | Use !setpower to join")
-    await ctx.send(embed=embed)
+    for page_num in range(0, len(ranked), per_page):
+        page_data = ranked[page_num:page_num + per_page]
+        lines = []
+        for i, (uid, data) in enumerate(page_data):
+            actual_rank = page_num + i
+            medal = medals[actual_rank] if actual_rank < 3 else f"**{actual_rank + 1}.**"
+            name = data.get("ign", f"<@{uid}>")
+            power = f"{data['power']:,}"
+            lines.append(f"{medal} {name} — ⚡ {power}")
+
+        embed = discord.Embed(
+            title="🏆 Alliance Power Leaderboard",
+            description="\n".join(lines),
+            color=discord.Color.gold(),
+        )
+        page_num_display = (page_num // per_page) + 1
+        total_pages = (len(ranked) + per_page - 1) // per_page
+        embed.set_footer(text=f"Page {page_num_display}/{total_pages} | Total: {len(ranked)} members")
+        embeds.append(embed)
+
+    if len(embeds) == 1:
+        await ctx.send(embed=embeds[0])
+    else:
+        view = PaginatorView(embeds)
+        await ctx.send(embed=embeds[0], view=view)
 
 
 # =========================================================================
-# !serverinfo — Server stats
+# /serverinfo — Server stats
 # =========================================================================
-@bot.command(name="serverinfo", aliases=["server"])
+@bot.hybrid_command(name="serverinfo", aliases=["server"])
 async def server_info(ctx: commands.Context):
     """Show server statistics."""
     guild = ctx.guild
     embed = discord.Embed(
         title=f"📊 {guild.name} — Server Info",
         color=discord.Color.blue(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     if guild.icon:
         embed.set_thumbnail(url=guild.icon.url)
@@ -695,40 +1070,55 @@ async def server_info(ctx: commands.Context):
 
 
 # =========================================================================
-# !codes — View gift codes
+# /codes — View gift codes
 # =========================================================================
-@bot.command(name="codes")
+@bot.hybrid_command(name="codes")
 async def view_codes(ctx: commands.Context):
-    """View all active gift codes."""
+    """View all active gift codes (ephemeral, paginated)."""
     active = [c for c in gift_codes.get("codes", []) if not c.get("expired")]
 
     if not active:
-        await ctx.send("🎁 No active gift codes right now. Use `!addcode` when you find one!")
+        await ctx.send("🎁 No active gift codes right now. Use `/addcode` when you find one!", ephemeral=True)
         return
 
-    embed = discord.Embed(
-        title="🎁 Active Gift Codes",
-        color=discord.Color.from_str("#FF69B4"),
-        timestamp=datetime.utcnow(),
-    )
+    # Create embeds for pagination (5 codes per page)
+    embeds = []
+    per_page = 5
 
-    for code in active[-10:]:  # Show last 10
-        embed.add_field(
-            name=f"📋 `{code['code']}`",
-            value=f"📦 {code.get('rewards', 'Unknown rewards')}\n👤 Added by {code.get('added_by', 'Unknown')}",
-            inline=False,
+    for page_num in range(0, len(active), per_page):
+        page_data = active[page_num:page_num + per_page]
+        embed = discord.Embed(
+            title="🎁 Active Gift Codes",
+            color=discord.Color.from_str("#FF69B4"),
+            timestamp=datetime.now(timezone.utc),
         )
 
-    embed.set_footer(text="Redeem in-game: Settings → Gift Code | Use !addcode to submit new codes")
-    await ctx.send(embed=embed)
+        for code in page_data:
+            embed.add_field(
+                name=f"📋 `{code['code']}`",
+                value=f"📦 {code.get('rewards', 'Unknown rewards')}\n👤 Added by {code.get('added_by', 'Unknown')}",
+                inline=False,
+            )
+
+        page_num_display = (page_num // per_page) + 1
+        total_pages = (len(active) + per_page - 1) // per_page
+        embed.set_footer(text=f"Page {page_num_display}/{total_pages} | Redeem: Settings → Gift Code | Use /addcode to submit")
+        embeds.append(embed)
+
+    if len(embeds) == 1:
+        await ctx.send(embed=embeds[0], ephemeral=True)
+    else:
+        view = PaginatorView(embeds)
+        await ctx.send(embed=embeds[0], view=view, ephemeral=True)
 
 
 # =========================================================================
-# !addcode — Submit a gift code
+# /addcode — Submit a gift code
 # =========================================================================
-@bot.command(name="addcode")
+@bot.hybrid_command(name="addcode")
+@app_commands.describe(args="Code and rewards: CODE123 | 500 gems, 2 speedups")
 async def add_code(ctx: commands.Context, *, args: str):
-    """Submit a new gift code. Usage: !addcode CODE123 | 500 gems, 2 speedups"""
+    """Submit a new gift code. Usage: /addcode CODE123 | 500 gems, 2 speedups"""
     parts = args.split("|", 1)
     code = parts[0].strip().upper()
     rewards = parts[1].strip() if len(parts) > 1 else "Rewards unknown"
@@ -743,7 +1133,7 @@ async def add_code(ctx: commands.Context, *, args: str):
         "code": code,
         "rewards": rewards,
         "added_by": ctx.author.display_name,
-        "added_at": datetime.utcnow().isoformat(),
+        "added_at": datetime.now(timezone.utc).isoformat(),
         "expired": False,
     })
     save_data("gift_codes", gift_codes)
@@ -764,11 +1154,12 @@ async def add_code(ctx: commands.Context, *, args: str):
 
 
 # =========================================================================
-# !expirecode — Mark a code as expired
+# /expirecode — Mark a code as expired
 # =========================================================================
-@bot.command(name="expirecode")
+@bot.hybrid_command(name="expirecode")
+@app_commands.describe(code="The gift code to mark as expired")
 async def expire_code(ctx: commands.Context, *, code: str):
-    """Mark a gift code as expired. Usage: !expirecode CODE123"""
+    """Mark a gift code as expired. Usage: /expirecode CODE123"""
     code = code.strip().upper()
     for c in gift_codes.get("codes", []):
         if c["code"] == code:
@@ -780,33 +1171,33 @@ async def expire_code(ctx: commands.Context, *, code: str):
 
 
 # =========================================================================
-# !tip — Random Kingshot tip
+# /tip — Random Kingshot tip
 # =========================================================================
-@bot.command(name="tip")
+@bot.hybrid_command(name="tip")
 async def random_tip(ctx: commands.Context):
-    """Get a random Kingshot pro tip."""
+    """Get a random Kingshot pro tip (ephemeral)."""
     tip = random.choice(DEFAULT_TIPS)
     embed = discord.Embed(description=tip, color=discord.Color.green())
-    embed.set_footer(text="Use !events for full event guides")
-    await ctx.send(embed=embed)
+    embed.set_footer(text="Use /events for full event guides")
+    await ctx.send(embed=embed, ephemeral=True)
 
 
 # =========================================================================
-# !timers — View active timers
+# /timers — View active timers
 # =========================================================================
-@bot.command(name="timers", aliases=["timer"])
+@bot.hybrid_command(name="timers", aliases=["timer"])
 async def view_timers(ctx: commands.Context):
-    """View active event timers."""
-    active = [t for t in war_timers.get("timers", []) if datetime.fromisoformat(t["time"]) > datetime.utcnow()]
+    """View active event timers (ephemeral)."""
+    active = [t for t in war_timers.get("timers", []) if _utc_from_iso(t["time"]) > datetime.now(timezone.utc)]
 
     if not active:
-        await ctx.send("⏰ No active timers. Officers can set them with `!settimer`")
+        await ctx.send("⏰ No active timers. Officers can set them with `/settimer`", ephemeral=True)
         return
 
     embed = discord.Embed(title="⏰ Active Event Timers", color=discord.Color.orange())
     for t in sorted(active, key=lambda x: x["time"]):
-        target = datetime.fromisoformat(t["time"])
-        delta = target - datetime.utcnow()
+        target = _utc_from_iso(t["time"])
+        delta = target - datetime.now(timezone.utc)
         hours = int(delta.total_seconds() // 3600)
         minutes = int((delta.total_seconds() % 3600) // 60)
         embed.add_field(
@@ -814,24 +1205,26 @@ async def view_timers(ctx: commands.Context):
             value=f"⏱️ **{hours}h {minutes}m** remaining\n📅 {target.strftime('%b %d, %I:%M %p')} UTC",
             inline=False,
         )
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, ephemeral=True)
 
 
 # =========================================================================
-# !settimer — Set an event timer (R4+)
+# /settimer — Set an event timer (R4+)
 # =========================================================================
-@bot.command(name="settimer")
+@bot.hybrid_command(name="settimer")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership", "R3 | TC25+")
+@app_commands.describe(args="Event name | UTC datetime (e.g. Swordland | 2026-03-15 20:00)")
 async def set_timer(ctx: commands.Context, *, args: str):
-    """Set an event timer. Usage: !settimer Swordland Showdown | 2026-03-15 20:00"""
+    """Set an event timer (all times in UTC). Usage: /settimer Swordland Showdown | 2026-03-15 20:00"""
     parts = args.split("|", 1)
     if len(parts) != 2:
-        await ctx.send("❌ Usage: `!settimer Event Name | YYYY-MM-DD HH:MM`")
+        await ctx.send("❌ Usage: `/settimer Event Name | YYYY-MM-DD HH:MM` (all times are UTC)")
         return
 
     name = parts[0].strip()
     try:
-        target = datetime.fromisoformat(parts[1].strip())
+        target = _utc_from_iso(parts[1].strip())
     except ValueError:
         await ctx.send("❌ Invalid date format. Use: `YYYY-MM-DD HH:MM` (e.g., `2026-03-15 20:00`)")
         return
@@ -843,18 +1236,21 @@ async def set_timer(ctx: commands.Context, *, args: str):
     })
     save_data("war_timers", war_timers)
 
-    delta = target - datetime.utcnow()
+    delta = target - datetime.now(timezone.utc)
     hours = int(delta.total_seconds() // 3600)
     await ctx.send(f"✅ Timer set: **{name}** in ~{hours} hours ({target.strftime('%b %d, %I:%M %p')} UTC)")
 
 
 # =========================================================================
-# !deltimer — Delete a timer (R4+)
+# /deltimer — Delete a timer (R4+)
 # =========================================================================
-@bot.command(name="deltimer")
+@bot.hybrid_command(name="deltimer")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership", "R3 | TC25+")
+@app_commands.autocomplete(name=timer_name_autocomplete)
+@app_commands.describe(name="The timer to delete")
 async def del_timer(ctx: commands.Context, *, name: str):
-    """Delete an event timer. Usage: !deltimer Swordland Showdown"""
+    """Delete an event timer. Usage: /deltimer Swordland Showdown"""
     timers = war_timers.get("timers", [])
     war_timers["timers"] = [t for t in timers if t["name"].lower() != name.lower()]
     save_data("war_timers", war_timers)
@@ -862,9 +1258,197 @@ async def del_timer(ctx: commands.Context, *, name: str):
 
 
 # =========================================================================
-# !memberinfo — Show member info
+# /timezone — Set or view your local timezone
 # =========================================================================
-@bot.command(name="memberinfo")
+# Common timezone aliases for easier input
+TZ_ALIASES = {
+    "est": "America/New_York", "edt": "America/New_York",
+    "cst": "America/Chicago", "cdt": "America/Chicago",
+    "mst": "America/Denver", "mdt": "America/Denver",
+    "pst": "America/Los_Angeles", "pdt": "America/Los_Angeles",
+    "gmt": "Europe/London", "bst": "Europe/London",
+    "cet": "Europe/Berlin", "cest": "Europe/Berlin",
+    "eet": "Europe/Bucharest", "eest": "Europe/Bucharest",
+    "ist": "Asia/Kolkata",
+    "jst": "Asia/Tokyo",
+    "kst": "Asia/Seoul",
+    "cst_asia": "Asia/Shanghai", "cst-asia": "Asia/Shanghai",
+    "aest": "Australia/Sydney", "aedt": "Australia/Sydney",
+    "nzst": "Pacific/Auckland", "nzdt": "Pacific/Auckland",
+    "brt": "America/Sao_Paulo", "brst": "America/Sao_Paulo",
+    "msk": "Europe/Moscow",
+    "sgt": "Asia/Singapore",
+    "hkt": "Asia/Hong_Kong",
+    "pht": "Asia/Manila",
+    "wib": "Asia/Jakarta",
+    "gulf": "Asia/Dubai", "gst": "Asia/Dubai",
+    "ast": "Asia/Riyadh",
+    "cat": "Africa/Johannesburg", "sast": "Africa/Johannesburg",
+}
+
+
+def _resolve_timezone(tz_input: str) -> Optional[str]:
+    """Resolve a timezone input to a valid IANA timezone name."""
+    tz_lower = tz_input.strip().lower().replace(" ", "_")
+
+    # Check aliases first
+    if tz_lower in TZ_ALIASES:
+        return TZ_ALIASES[tz_lower]
+
+    # Check for UTC offset format like UTC+5, UTC-3, GMT+8
+    import re
+    offset_match = re.match(r"^(?:utc|gmt)\s*([+-])?\s*(\d{1,2})(?::(\d{2}))?$", tz_lower)
+    if offset_match:
+        sign = offset_match.group(1) or "+"
+        hours = int(offset_match.group(2))
+        mins = int(offset_match.group(3) or 0)
+        # Map common UTC offsets to IANA names
+        total_offset = hours * 60 + mins
+        if sign == "-":
+            total_offset = -total_offset
+        # Try Etc/GMT (note: Etc/GMT signs are INVERTED)
+        if mins == 0:
+            etc_name = f"Etc/GMT{'+' if total_offset <= 0 else '-'}{abs(hours)}"
+            if etc_name in available_timezones():
+                return etc_name
+        return None
+
+    # Direct IANA name match (case-insensitive search)
+    all_tzs = available_timezones()
+    for tz in all_tzs:
+        if tz.lower() == tz_lower:
+            return tz
+
+    # Partial match — search city names
+    matches = [tz for tz in all_tzs if tz_lower in tz.lower()]
+    if len(matches) == 1:
+        return matches[0]
+
+    return None
+
+
+@bot.hybrid_command(name="timezone", aliases=["tz", "settz"])
+@app_commands.autocomplete(tz_input=timezone_autocomplete)
+@app_commands.describe(tz_input="Your timezone (e.g. EST, America/New_York, UTC+5)")
+async def set_timezone(ctx: commands.Context, *, tz_input: str = None):
+    """Set or view your timezone. Usage: /timezone EST or /timezone America/New_York"""
+    uid = str(ctx.author.id)
+
+    if not tz_input:
+        # Show current timezone (ephemeral)
+        current = user_timezones.get(uid)
+        if current:
+            now_utc = datetime.now(timezone.utc)
+            now_local = now_utc.astimezone(ZoneInfo(current))
+            await ctx.send(
+                f"🕐 Your timezone is set to **{current}**\n"
+                f"Current UTC time: **{now_utc.strftime('%b %d, %I:%M %p')} UTC**\n"
+                f"Your local time: **{now_local.strftime('%b %d, %I:%M %p %Z')}**\n\n"
+                f"To change it: `/timezone <timezone>`",
+                ephemeral=True
+            )
+        else:
+            await ctx.send(
+                "🕐 You haven't set a timezone yet. All times are displayed in **UTC**.\n\n"
+                "Set yours with: `/timezone <timezone>`\n"
+                "Examples: `/timezone EST`, `/timezone America/New_York`, `/timezone UTC+5`\n\n"
+                "Common codes: `EST`, `CST`, `PST`, `GMT`, `CET`, `IST`, `JST`, `KST`, `AEST`",
+                ephemeral=True
+            )
+        return
+
+    resolved = _resolve_timezone(tz_input)
+    if not resolved:
+        await ctx.send(
+            f"❌ Could not find timezone `{tz_input}`.\n\n"
+            "Try one of these formats:\n"
+            "• Abbreviation: `EST`, `PST`, `CET`, `IST`, `JST`, `KST`\n"
+            "• IANA name: `America/New_York`, `Europe/London`, `Asia/Tokyo`\n"
+            "• UTC offset: `UTC+5`, `UTC-3`, `GMT+8`"
+        )
+        return
+
+    user_timezones[uid] = resolved
+    save_data("user_timezones", user_timezones)
+
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(ZoneInfo(resolved))
+    await ctx.send(
+        f"✅ Timezone set to **{resolved}**\n"
+        f"Current UTC time: **{now_utc.strftime('%b %d, %I:%M %p')} UTC**\n"
+        f"Your local time: **{now_local.strftime('%b %d, %I:%M %p %Z')}**"
+    )
+
+
+@bot.hybrid_command(name="localtime", aliases=["lt", "convert"])
+@app_commands.describe(utc_time_str="UTC time to convert (e.g. 2026-03-15 20:00). Leave empty for current time.")
+async def local_time(ctx: commands.Context, *, utc_time_str: str = None):
+    """Convert a UTC time to your local timezone (ephemeral). Usage: /localtime 2026-03-15 20:00"""
+    uid = str(ctx.author.id)
+    user_tz = user_timezones.get(uid)
+
+    if not user_tz:
+        await ctx.send(
+            "❌ You haven't set your timezone yet!\n"
+            "Set it first with: `/timezone EST` (or your timezone)\n\n"
+            "Common codes: `EST`, `CST`, `PST`, `GMT`, `CET`, `IST`, `JST`, `KST`, `AEST`",
+            ephemeral=True
+        )
+        return
+
+    if not utc_time_str:
+        # Show current time in both UTC and local
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc.astimezone(ZoneInfo(user_tz))
+        # Also show all active timers in local time
+        active = [t for t in war_timers.get("timers", []) if _utc_from_iso(t["time"]) > datetime.now(timezone.utc)]
+        embed = discord.Embed(
+            title="🕐 Time Conversion",
+            color=discord.Color.teal(),
+        )
+        embed.add_field(name="UTC Now", value=f"**{now_utc.strftime('%b %d, %I:%M %p')} UTC**", inline=True)
+        embed.add_field(name=f"Your Time ({user_tz.split('/')[-1]})", value=f"**{now_local.strftime('%b %d, %I:%M %p %Z')}**", inline=True)
+
+        if active:
+            timer_lines = []
+            for t in sorted(active, key=lambda x: x["time"])[:5]:
+                target_utc = _utc_from_iso(t["time"]).replace(tzinfo=timezone.utc)
+                target_local = target_utc.astimezone(ZoneInfo(user_tz))
+                timer_lines.append(
+                    f"**{t['name']}**\n"
+                    f"  UTC: {target_utc.strftime('%b %d, %I:%M %p')} UTC\n"
+                    f"  You: {target_local.strftime('%b %d, %I:%M %p %Z')}"
+                )
+            embed.add_field(name="⏰ Active Timers (Local Time)", value="\n".join(timer_lines), inline=False)
+
+        embed.set_footer(text=f"Your timezone: {user_tz} | Change with /timezone")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
+    # Parse the provided UTC time
+    try:
+        target_utc = datetime.fromisoformat(utc_time_str.strip()).replace(tzinfo=timezone.utc)
+    except ValueError:
+        try:
+            target_utc = datetime.strptime(utc_time_str.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        except ValueError:
+            await ctx.send("❌ Invalid time format. Use: `/localtime 2026-03-15 20:00`", ephemeral=True)
+            return
+
+    target_local = target_utc.astimezone(ZoneInfo(user_tz))
+    await ctx.send(
+        f"🕐 **Time Conversion:**\n"
+        f"UTC: **{target_utc.strftime('%b %d, %Y — %I:%M %p')} UTC**\n"
+        f"Your time ({user_tz.split('/')[-1]}): **{target_local.strftime('%b %d, %Y — %I:%M %p %Z')}**",
+        ephemeral=True
+    )
+
+
+# =========================================================================
+# /memberinfo — Show member info
+# =========================================================================
+@bot.hybrid_command(name="memberinfo")
+@app_commands.describe(member="The member to view info for")
 async def member_info(ctx: commands.Context, member: discord.Member = None):
     """Show info about a member."""
     member = member or ctx.author
@@ -894,9 +1478,10 @@ async def member_info(ctx: commands.Context, member: discord.Member = None):
 
 
 # =========================================================================
-# !setup — Full server setup (Admin only)
+# /setup — Full server setup (Admin only)
 # =========================================================================
-@bot.command(name="setup")
+@bot.hybrid_command(name="setup")
+@app_commands.default_permissions(administrator=True)
 @commands.has_permissions(administrator=True)
 async def setup_server(ctx: commands.Context):
     """Create all channels, roles, and permissions for the Kingshot guild server."""
@@ -910,16 +1495,18 @@ async def setup_server(ctx: commands.Context):
             log.info(f"Created role: {role_name}")
 
     await ctx.send(f"✅ Roles configured ({len(ROLE_COLORS)} roles)")
-    await ctx.send("🎉 **Setup complete!** Use `!help` to see all available commands.")
+    await ctx.send("🎉 **Setup complete!** Use `/help` to see all available commands.")
 
 
 # =========================================================================
-# !announce — Send announcement (R4+)
+# /announce — Send announcement (R4+)
 # =========================================================================
-@bot.command(name="announce")
+@bot.hybrid_command(name="announce")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership")
+@app_commands.describe(channel_name="Channel to post in", message="Announcement text")
 async def announce(ctx: commands.Context, channel_name: str, *, message: str):
-    """Send an announcement. Usage: !announce announcements Your message here"""
+    """Send an announcement. Usage: /announce announcements Your message here"""
     channel = discord.utils.get(ctx.guild.text_channels, name=channel_name)
     if not channel:
         await ctx.send(f"❌ Channel `#{channel_name}` not found.")
@@ -929,7 +1516,7 @@ async def announce(ctx: commands.Context, channel_name: str, *, message: str):
         title="📢 Announcement",
         description=message,
         color=discord.Color.gold(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     embed.set_footer(text=f"Posted by {ctx.author.display_name}")
     await channel.send(embed=embed)
@@ -937,12 +1524,14 @@ async def announce(ctx: commands.Context, channel_name: str, *, message: str):
 
 
 # =========================================================================
-# !rally — Rally call (R3+)
+# /rally — Rally call (R3+)
 # =========================================================================
-@bot.command(name="rally")
+@bot.hybrid_command(name="rally")
+@app_commands.default_permissions(manage_messages=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership", "R3 | TC25+")
+@app_commands.describe(details="Rally details (target, troops, etc.)")
 async def rally_call(ctx: commands.Context, *, details: str = "Rally up! Check war room."):
-    """Send an urgent rally call. Usage: !rally Target: Player123 — send T10 troops"""
+    """Send an urgent rally call. Usage: /rally Target: Player123 — send T10 troops"""
     rally_ch = discord.utils.get(ctx.guild.text_channels, name="rally-calls")
     target_ch = rally_ch or ctx.channel
 
@@ -950,7 +1539,7 @@ async def rally_call(ctx: commands.Context, *, details: str = "Rally up! Check w
         title="🚨 RALLY CALL 🚨",
         description=details,
         color=discord.Color.red(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     embed.set_footer(text=f"Called by {ctx.author.display_name}")
     await target_ch.send("@everyone", embed=embed)
@@ -959,12 +1548,14 @@ async def rally_call(ctx: commands.Context, *, details: str = "Rally up! Check w
 
 
 # =========================================================================
-# !warsched — War schedule (R3+)
+# /warsched — War schedule (R3+)
 # =========================================================================
-@bot.command(name="warsched")
+@bot.hybrid_command(name="warsched")
+@app_commands.default_permissions(manage_messages=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership", "R3 | TC25+")
+@app_commands.describe(schedule_text="War schedule details")
 async def war_schedule(ctx: commands.Context, *, schedule_text: str):
-    """Post a war schedule. Usage: !warsched Wednesday 8PM — Castle Siege"""
+    """Post a war schedule. Usage: /warsched Wednesday 8PM — Castle Siege"""
     sched_ch = discord.utils.get(ctx.guild.text_channels, name="war-schedule")
     target_ch = sched_ch or ctx.channel
 
@@ -972,7 +1563,7 @@ async def war_schedule(ctx: commands.Context, *, schedule_text: str):
         title="🗓️ War Schedule",
         description=schedule_text.replace("\\n", "\n"),
         color=discord.Color.dark_red(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     embed.set_footer(text=f"Updated by {ctx.author.display_name}")
     await target_ch.send(embed=embed)
@@ -980,12 +1571,14 @@ async def war_schedule(ctx: commands.Context, *, schedule_text: str):
 
 
 # =========================================================================
-# !promote / !demote — Role management (R4+)
+# /promote / /demote — Role management (R4+)
 # =========================================================================
-@bot.command(name="promote")
+@bot.hybrid_command(name="promote")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership")
+@app_commands.describe(member="The member to promote", role_name="The role to assign")
 async def promote(ctx: commands.Context, member: discord.Member, *, role_name: str):
-    """Promote a member. Usage: !promote @user Member"""
+    """Promote a member. Usage: /promote @user Member"""
     role = discord.utils.get(ctx.guild.roles, name=role_name)
     if not role:
         await ctx.send(f"❌ Role `{role_name}` not found.")
@@ -994,10 +1587,12 @@ async def promote(ctx: commands.Context, member: discord.Member, *, role_name: s
     await ctx.send(f"✅ {member.display_name} promoted to **{role_name}**!")
 
 
-@bot.command(name="demote")
+@bot.hybrid_command(name="demote")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership")
+@app_commands.describe(member="The member to demote", role_name="The role to remove")
 async def demote(ctx: commands.Context, member: discord.Member, *, role_name: str):
-    """Remove a role. Usage: !demote @user Officer"""
+    """Remove a role. Usage: /demote @user Officer"""
     role = discord.utils.get(ctx.guild.roles, name=role_name)
     if not role:
         await ctx.send(f"❌ Role `{role_name}` not found.")
@@ -1009,34 +1604,42 @@ async def demote(ctx: commands.Context, member: discord.Member, *, role_name: st
 # =========================================================================
 # Moderation commands
 # =========================================================================
-@bot.command(name="kick")
+@bot.hybrid_command(name="kick")
+@app_commands.default_permissions(kick_members=True)
 @commands.has_permissions(kick_members=True)
+@app_commands.describe(member="The member to kick", reason="Reason for kicking")
 async def kick_member(ctx: commands.Context, member: discord.Member, *, reason: str = "No reason given"):
     """Kick a member."""
     await member.kick(reason=reason)
     await ctx.send(f"👢 {member.display_name} kicked. Reason: {reason}")
 
 
-@bot.command(name="mute")
+@bot.hybrid_command(name="mute")
+@app_commands.default_permissions(moderate_members=True)
 @commands.has_permissions(manage_roles=True)
+@app_commands.describe(member="The member to mute", minutes="Duration in minutes (default: 10)")
 async def mute_member(ctx: commands.Context, member: discord.Member, minutes: int = 10):
-    """Timeout a member. Usage: !mute @user 30"""
+    """Timeout a member. Usage: /mute @user 30"""
     await member.timeout(timedelta(minutes=minutes), reason=f"Muted by {ctx.author.display_name}")
     await ctx.send(f"🔇 {member.display_name} muted for {minutes} minutes.")
 
 
-@bot.command(name="unmute")
+@bot.hybrid_command(name="unmute")
+@app_commands.default_permissions(moderate_members=True)
 @commands.has_permissions(manage_roles=True)
+@app_commands.describe(member="The member to unmute")
 async def unmute_member(ctx: commands.Context, member: discord.Member):
     """Remove timeout."""
     await member.timeout(None, reason=f"Unmuted by {ctx.author.display_name}")
     await ctx.send(f"🔊 {member.display_name} unmuted.")
 
 
-@bot.command(name="clear")
+@bot.hybrid_command(name="clear")
+@app_commands.default_permissions(manage_messages=True)
 @commands.has_permissions(manage_messages=True)
+@app_commands.describe(amount="Number of messages to delete (max 100)")
 async def clear_messages(ctx: commands.Context, amount: int = 10):
-    """Delete messages. Usage: !clear 25"""
+    """Delete messages. Usage: /clear 25"""
     if amount > 100:
         await ctx.send("❌ Max 100 messages at a time.")
         return
@@ -1047,31 +1650,50 @@ async def clear_messages(ctx: commands.Context, amount: int = 10):
 
 
 # =========================================================================
-# !listannouncements / !toggleannouncement
+# /listannouncements / /toggleannouncement
 # =========================================================================
-@bot.command(name="listannouncements")
+@bot.hybrid_command(name="listannouncements")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership")
 async def list_announcements(ctx: commands.Context):
-    """List scheduled announcements."""
+    """List scheduled announcements (paginated)."""
     cfg = load_config()
     announcements = cfg.get("scheduled_announcements", [])
     if not announcements:
         await ctx.send("No scheduled announcements configured.")
         return
 
-    embed = discord.Embed(title="📋 Scheduled Announcements", color=discord.Color.blue())
-    for ann in announcements:
-        status = "✅ Enabled" if ann.get("enabled") else "❌ Disabled"
-        embed.add_field(
-            name=f"{ann['name']} — {status}",
-            value=f"**Channel:** #{ann['channel']}\n**Schedule:** `{ann['cron']}`\n**Message:** {ann['message'][:100]}...",
-            inline=False,
-        )
-    await ctx.send(embed=embed)
+    # Create embeds for pagination (5 per page)
+    embeds = []
+    per_page = 5
+
+    for page_num in range(0, len(announcements), per_page):
+        page_data = announcements[page_num:page_num + per_page]
+        embed = discord.Embed(title="📋 Scheduled Announcements", color=discord.Color.blue())
+        for ann in page_data:
+            status = "✅ Enabled" if ann.get("enabled") else "❌ Disabled"
+            embed.add_field(
+                name=f"{ann['name']} — {status}",
+                value=f"**Channel:** #{ann['channel']}\n**Schedule:** `{ann['cron']}`\n**Message:** {ann['message'][:100]}...",
+                inline=False,
+            )
+        page_num_display = (page_num // per_page) + 1
+        total_pages = (len(announcements) + per_page - 1) // per_page
+        embed.set_footer(text=f"Page {page_num_display}/{total_pages}")
+        embeds.append(embed)
+
+    if len(embeds) == 1:
+        await ctx.send(embed=embeds[0])
+    else:
+        view = PaginatorView(embeds)
+        await ctx.send(embed=embeds[0], view=view)
 
 
-@bot.command(name="toggleannouncement")
+@bot.hybrid_command(name="toggleannouncement")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership")
+@app_commands.autocomplete(name=announcement_name_autocomplete)
+@app_commands.describe(name="The announcement to toggle on/off")
 async def toggle_announcement(ctx: commands.Context, name: str):
     """Toggle a scheduled announcement."""
     cfg = load_config()
@@ -1088,7 +1710,7 @@ async def toggle_announcement(ctx: commands.Context, name: str):
 # =========================================================================
 # Event Cycle Commands
 # =========================================================================
-@bot.command(name="nextevent", aliases=["next", "upcoming"])
+@bot.hybrid_command(name="nextevent", aliases=["next", "upcoming"])
 async def next_event_cmd(ctx: commands.Context):
     """Show the next upcoming events."""
     upcoming = get_upcoming_events(days_ahead=7)
@@ -1099,7 +1721,7 @@ async def next_event_cmd(ctx: commands.Context):
     embed = discord.Embed(
         title="📅 Upcoming Events (Next 7 Days)",
         color=discord.Color.blue(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     for days_until, start_date, ev in upcoming[:10]:
         if days_until == 0:
@@ -1114,18 +1736,18 @@ async def next_event_cmd(ctx: commands.Context):
             value=f"{timing}\nDuration: {duration} day{'s' if duration != 1 else ''} | Type: {ev.get('type', 'event').title()}",
             inline=False,
         )
-    embed.set_footer(text="Use !schedule for the full cycle | !setanchor to adjust cycle")
+    embed.set_footer(text="Use /schedule for the full cycle | /setanchor to adjust cycle")
     await ctx.send(embed=embed)
 
 
-@bot.command(name="schedule", aliases=["cycle", "eventcycle"])
+@bot.hybrid_command(name="schedule", aliases=["cycle", "eventcycle"])
 async def show_schedule(ctx: commands.Context):
     """Show the full 4-week event cycle schedule."""
     cycle = load_event_cycle()
-    anchor = datetime.strptime(cycle["cycle_anchor"], "%Y-%m-%d")
+    anchor = datetime.strptime(cycle["cycle_anchor"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
     cycle_len = cycle.get("cycle_length_days", 28)
     today_cycle_day = get_cycle_day()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     embed = discord.Embed(
         title="📋 4-Week Event Cycle",
@@ -1162,11 +1784,11 @@ async def show_schedule(ctx: commands.Context):
         rec_text = "\n".join(f"{ev['emoji']} **{ev['name']}** — every {ev['recurring_every_days']} days" for ev in recurring)
         embed.add_field(name="🔄 Recurring", value=rec_text, inline=False)
 
-    embed.set_footer(text="Officers: !setanchor YYYY-MM-DD to adjust cycle start")
+    embed.set_footer(text="Officers: /setanchor YYYY-MM-DD to adjust cycle start")
     await ctx.send(embed=embed)
 
 
-@bot.command(name="today", aliases=["active", "now"])
+@bot.hybrid_command(name="today", aliases=["active", "now"])
 async def today_events(ctx: commands.Context):
     """Show events active right now."""
     active = get_active_events()
@@ -1177,7 +1799,7 @@ async def today_events(ctx: commands.Context):
     embed = discord.Embed(
         title="🔴 Active Events Right Now",
         color=discord.Color.red(),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     # Discord embed total limit is 6000 chars. Show brief summary per event.
     for ev in active:
@@ -1186,22 +1808,24 @@ async def today_events(ctx: commands.Context):
         brief = reminder.split("\n")[0]
         if len(brief) > 200:
             brief = brief[:197] + "..."
-        brief += f"\n*Use `!tips {ev['name'].lower()}` for full strategy guide*"
+        brief += f"\n*Use `/tips {ev['name'].lower()}` for full strategy guide*"
         embed.add_field(
             name=f"{ev['emoji']} {ev['name']} ({ev.get('type', 'event').title()})",
             value=brief,
             inline=False,
         )
-    embed.set_footer(text=f"Cycle Day {get_cycle_day() + 1}/28 | Use !tips <event> for full guide")
+    embed.set_footer(text=f"Cycle Day {get_cycle_day() + 1}/28 | Use /tips <event> for full guide")
     await ctx.send(embed=embed)
 
 
-@bot.command(name="tips", aliases=["eventtips", "strategy"])
+@bot.hybrid_command(name="tips", aliases=["eventtips", "strategy"])
+@app_commands.autocomplete(event_name=event_name_autocomplete)
+@app_commands.describe(event_name="The event to get strategy tips for")
 async def event_tips(ctx: commands.Context, *, event_name: str = None):
-    """Show full strategy & prep tips for an event. Usage: !tips <event name>"""
+    """Show full strategy & prep tips for an event. Usage: /tips <event name>"""
     if not event_name:
-        await ctx.send("❓ Usage: `!tips <event name>` — e.g. `!tips bear hunt`, `!tips strongest governor`\n"
-                        "Use `!today` to see active events or `!schedule` for the full cycle.")
+        await ctx.send("❓ Usage: `/tips <event name>` — e.g. `/tips bear hunt`, `/tips strongest governor`\n"
+                        "Use `/today` to see active events or `/schedule` for the full cycle.")
         return
 
     cycle = load_event_cycle()
@@ -1232,25 +1856,26 @@ async def event_tips(ctx: commands.Context, *, event_name: str = None):
                 title=f"{ev['emoji']} {ev['name']} — Strategy & Prep Guide",
                 description=reminder,
                 color=discord.Color.green(),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
             )
             embed.add_field(name="Duration", value=f"{ev.get('duration_days', 1)} day(s)", inline=True)
             embed.add_field(name="Type", value=ev.get("type", "event").title(), inline=True)
-            embed.set_footer(text="🤖 Kingshot Bot | Use !today for active events")
+            embed.set_footer(text="🤖 Kingshot Bot | Use /today for active events")
             await ctx.send(embed=embed)
         else:
             # Very long tip — send as plain text
             await ctx.send(f"**{ev['emoji']} {ev['name']} — Strategy & Prep Guide**\n\n{reminder[:2000]}")
 
 
-@bot.command(name="setanchor")
+@bot.hybrid_command(name="setanchor")
+@app_commands.default_permissions(manage_guild=True)
 @commands.has_any_role("R4 | Leadership", "R5 | Alliance Leader")
 async def set_anchor(ctx: commands.Context, date_str: str):
-    """Set the cycle anchor date. Usage: !setanchor 2026-03-06"""
+    """Set the cycle anchor date. Usage: /setanchor 2026-03-06"""
     try:
-        new_anchor = datetime.strptime(date_str, "%Y-%m-%d")
+        new_anchor = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
-        await ctx.send("❌ Invalid date format. Use: `!setanchor YYYY-MM-DD`")
+        await ctx.send("❌ Invalid date format. Use: `/setanchor YYYY-MM-DD`")
         return
 
     cycle = load_event_cycle()
@@ -1263,26 +1888,236 @@ async def set_anchor(ctx: commands.Context, date_str: str):
 
 
 # =========================================================================
+# /warsignup — Create war signup (R4+)
+# =========================================================================
+@bot.hybrid_command(name="warsignup")
+@app_commands.default_permissions(manage_guild=True)
+@commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership")
+@app_commands.describe(event_name="The event to create signup for")
+async def war_signup(ctx: commands.Context, *, event_name: str):
+    """Create a war signup embed with attendance tracking. Usage: /warsignup Swordland Showdown"""
+    embed = discord.Embed(
+        title=f"🚨 {event_name} Signup",
+        description="Click the buttons below to sign up for this event!",
+        color=discord.Color.blue(),
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.add_field(name="✅ Confirmed", value="0", inline=True)
+    embed.add_field(name="❌ Declined", value="0", inline=True)
+    embed.add_field(name="❓ Maybe", value="0", inline=True)
+    embed.set_footer(text=f"Created by {ctx.author.display_name}")
+
+    view = WarSignupView(event_name)
+    msg = await ctx.send(embed=embed, view=view)
+
+    # Store signup in data
+    war_signups["signups"].append({
+        "event_name": event_name,
+        "message_id": msg.id,
+        "channel_id": ctx.channel.id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "confirmed": [],
+        "declined": [],
+        "maybe": [],
+    })
+    save_data("war_signups", war_signups)
+
+
+# =========================================================================
+# /attendance — Show attendance for past signups
+# =========================================================================
+@bot.hybrid_command(name="attendance")
+async def show_attendance(ctx: commands.Context, event_name: str = None):
+    """Show attendance stats for a war signup event."""
+    signups = war_signups.get("signups", [])
+    if not signups:
+        await ctx.send("📊 No war signups found.")
+        return
+
+    if event_name:
+        signup = next((s for s in signups if s["event_name"].lower() == event_name.lower()), None)
+        if not signup:
+            await ctx.send(f"❌ Event `{event_name}` not found in signups.")
+            return
+    else:
+        # Show most recent
+        signup = signups[-1] if signups else None
+        if not signup:
+            await ctx.send("📊 No war signups found.")
+            return
+
+    embed = discord.Embed(
+        title=f"📊 Attendance: {signup['event_name']}",
+        color=discord.Color.green(),
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.add_field(name="✅ Confirmed", value=str(len(signup.get("confirmed", []))), inline=True)
+    embed.add_field(name="❌ Declined", value=str(len(signup.get("declined", []))), inline=True)
+    embed.add_field(name="❓ Maybe", value=str(len(signup.get("maybe", []))), inline=True)
+    total = len(signup.get("confirmed", [])) + len(signup.get("declined", [])) + len(signup.get("maybe", []))
+    embed.add_field(name="Total Signups", value=str(total), inline=False)
+    await ctx.send(embed=embed)
+
+
+# =========================================================================
+# /powerhistory — Show power change history
+# =========================================================================
+@bot.hybrid_command(name="powerhistory")
+async def power_history_cmd(ctx: commands.Context, member: discord.Member = None):
+    """Show power change history for a user."""
+    member = member or ctx.author
+    uid = str(member.id)
+    history = power_history.get(uid, [])
+
+    if not history:
+        await ctx.send(f"📈 No power history found for {member.display_name}.")
+        return
+
+    embed = discord.Embed(
+        title=f"📈 Power History: {member.display_name}",
+        color=discord.Color.blue(),
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    # Show last 10 entries
+    for entry in history[-10:]:
+        ts = datetime.fromisoformat(entry["timestamp"]).strftime("%b %d, %Y")
+        old = f"{entry['old_power']:,}"
+        new = f"{entry['new_power']:,}"
+        change = entry["new_power"] - entry["old_power"]
+        change_str = f"+{change:,}" if change >= 0 else f"{change:,}"
+        embed.add_field(
+            name=f"📅 {ts}",
+            value=f"{old} → {new} ({change_str})",
+            inline=False,
+        )
+
+    await ctx.send(embed=embed)
+
+
+# =========================================================================
+# /countdown — Live countdown to next event
+# =========================================================================
+@bot.hybrid_command(name="countdown")
+@app_commands.autocomplete(event_name=event_name_autocomplete)
+@app_commands.describe(event_name="The event to countdown to")
+async def countdown_cmd(ctx: commands.Context, *, event_name: str):
+    """Show countdown to the next occurrence of an event."""
+    cycle = load_event_cycle()
+    search = event_name.lower().strip()
+
+    # Find matching event in cycle
+    matched_ev = None
+    for ev in cycle.get("events", []):
+        if search in ev["name"].lower() or ev["name"].lower() in search:
+            matched_ev = ev
+            break
+
+    if not matched_ev:
+        await ctx.send(f"❌ Event `{event_name}` not found. Use `/schedule` to see all events.")
+        return
+
+    # Calculate next occurrence
+    upcoming = get_upcoming_events(days_ahead=365)
+    next_occurrence = None
+    for days_until, start_date, ev in upcoming:
+        if ev["name"].lower() == matched_ev["name"].lower():
+            next_occurrence = (days_until, start_date, ev)
+            break
+
+    if not next_occurrence:
+        await ctx.send(f"❌ Could not find next occurrence of {matched_ev['name']}.")
+        return
+
+    days_until, start_date, ev = next_occurrence
+    now = datetime.now(timezone.utc)
+    delta = start_date - now
+
+    days = delta.days
+    hours = (delta.seconds // 3600) % 24
+    minutes = (delta.seconds % 3600) // 60
+    seconds = delta.seconds % 60
+
+    embed = discord.Embed(
+        title=f"⏱️ Countdown: {ev['emoji']} {ev['name']}",
+        description=f"**{days}** days, **{hours}** hours, **{minutes}** minutes, **{seconds}** seconds",
+        color=ev.get("color", discord.Color.blue()),
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.add_field(name="Starts", value=start_date.strftime("%b %d, %Y at %I:%M %p UTC"), inline=True)
+    embed.add_field(name="Duration", value=f"{ev.get('duration_days', 1)} day(s)", inline=True)
+    embed.set_footer(text="Time to prepare!")
+    await ctx.send(embed=embed)
+
+
+# =========================================================================
+# /rolepanel — Post role selection panel (Admin only)
+# =========================================================================
+@bot.hybrid_command(name="rolepanel")
+@app_commands.default_permissions(administrator=True)
+@commands.has_permissions(administrator=True)
+async def role_panel(ctx: commands.Context):
+    """Post role selection panel in this channel. Users can click to toggle roles."""
+    embed = discord.Embed(
+        title="🏷️ Select Your Alliance Role",
+        description="Click the buttons below to add or remove roles. You can have multiple roles!",
+        color=discord.Color.purple(),
+    )
+    embed.add_field(name="R5 | Alliance Leader", value="Guild leader", inline=False)
+    embed.add_field(name="R4 | Leadership", value="Officers", inline=False)
+    embed.add_field(name="R3 | TC25+", value="Command Center 25+", inline=False)
+    embed.add_field(name="R2 | TC24-", value="Command Center 24 or below", inline=False)
+    embed.add_field(name="R1 | Bear Bait", value="Members", inline=False)
+
+    await ctx.send(embed=embed, view=RolePanelView())
+    await ctx.send("✅ Role panel posted!")
+
+
+# =========================================================================
+# /remindme — Opt-in to event DM reminders
+# =========================================================================
+@bot.hybrid_command(name="remindme")
+async def remind_me(ctx: commands.Context):
+    """Opt-in to receive DM reminders before events (60 minutes before)."""
+    uid = str(ctx.author.id)
+    users = reminder_optins.get("users", [])
+
+    if uid in users:
+        users.remove(uid)
+        await ctx.send("❌ You've been removed from event reminders. Use `/remindme` again to re-enable.")
+    else:
+        users.append(uid)
+        await ctx.send("✅ You'll now receive DM reminders 60 minutes before events you've signed up for!")
+
+    reminder_optins["users"] = users
+    save_data("reminder_optins", reminder_optins)
+
+
+# =========================================================================
 # Background Tasks
 # =========================================================================
 @tasks.loop(minutes=1)
 async def scheduled_announcements():
-    """Check and send scheduled announcements."""
-    now = datetime.utcnow()
+    """Check and send scheduled announcements (with cron double-fire prevention)."""
+    now = datetime.now(timezone.utc)
     cfg = load_config()
     for ann in cfg.get("scheduled_announcements", []):
         if not ann.get("enabled"):
             continue
         if _cron_matches(ann["cron"], now):
-            for guild in bot.guilds:
-                channel = discord.utils.get(guild.text_channels, name=ann["channel"])
-                if channel:
-                    embed = discord.Embed(description=ann["message"], color=discord.Color.gold(), timestamp=now)
-                    embed.set_footer(text="Automated announcement")
-                    try:
-                        await channel.send(embed=embed)
-                    except discord.Forbidden:
-                        pass
+            ann_name = ann.get("name", ann["channel"])
+            # Only fire if we haven't fired this minute already
+            if last_announcement_fires.get(ann_name) != now.strftime("%Y-%m-%d %H:%M"):
+                last_announcement_fires[ann_name] = now.strftime("%Y-%m-%d %H:%M")
+                for guild in bot.guilds:
+                    channel = discord.utils.get(guild.text_channels, name=ann["channel"])
+                    if channel:
+                        embed = discord.Embed(description=ann["message"], color=discord.Color.gold(), timestamp=now)
+                        embed.set_footer(text="Automated announcement")
+                        try:
+                            await channel.send(embed=embed)
+                        except discord.Forbidden:
+                            pass
 
 
 @tasks.loop(hours=24)
@@ -1297,7 +2132,7 @@ async def daily_tip_task():
                 description=tip,
                 color=discord.Color.green(),
             )
-            embed.set_footer(text="Use !tip for more tips | !events for full guides")
+            embed.set_footer(text="Use /tip for more tips | /events for full guides")
             try:
                 await channel.send(embed=embed)
             except discord.Forbidden:
@@ -1306,25 +2141,71 @@ async def daily_tip_task():
 
 @tasks.loop(minutes=5)
 async def timer_check():
-    """Check for expired timers and alert."""
-    now = datetime.utcnow()
+    """Check for expired timers, send alerts, DM reminders, and cleanup old timers."""
+    now = datetime.now(timezone.utc)
     timers = war_timers.get("timers", [])
     to_notify = []
+    to_remove = []
 
     for t in timers:
-        target = datetime.fromisoformat(t["time"])
+        target = _utc_from_iso(t["time"])
         remaining = (target - now).total_seconds()
+
+        # Alert at 60 minutes for DM reminders
+        if 0 < remaining <= 3600 and not t.get("alerted_60"):
+            t["alerted_60"] = True
+            # DM users who signed up or have timezone set
+            users_to_remind = set()
+            for signup in war_signups.get("signups", []):
+                if signup["event_name"].lower() in t["name"].lower():
+                    users_to_remind.update(signup.get("confirmed", []))
+            # Also check if user has timezone + reminders enabled
+            for uid_str in reminder_optins.get("users", []):
+                if uid_str in user_timezones:
+                    users_to_remind.add(int(uid_str))
+
+            for uid in users_to_remind:
+                try:
+                    user = await bot.fetch_user(uid)
+                    user_tz = user_timezones.get(str(uid), "UTC")
+                    target_local = target.astimezone(ZoneInfo(user_tz) if user_tz != "UTC" else timezone.utc)
+                    embed = discord.Embed(
+                        title=f"⏰ Event Reminder: {t['name']}",
+                        description=f"**{t['name']}** starts in **1 hour**!",
+                        color=discord.Color.blue(),
+                    )
+                    embed.add_field(
+                        name="Your Local Time",
+                        value=target_local.strftime("%b %d, %I:%M %p %Z"),
+                        inline=False,
+                    )
+                    await user.send(embed=embed)
+                except Exception:
+                    pass
+
         # Alert at 15 minutes
         if 0 < remaining <= 900 and not t.get("alerted_15"):
             t["alerted_15"] = True
             to_notify.append((t["name"], "15 minutes"))
+
         # Alert at start
         elif remaining <= 0 and not t.get("alerted_start"):
             t["alerted_start"] = True
             to_notify.append((t["name"], "NOW"))
 
-    if to_notify:
+        # Cleanup timers that expired more than 24 hours ago
+        if remaining < -86400:
+            to_remove.append(t)
+            log.info(f"Cleaning up expired timer: {t['name']}")
+
+    # Remove expired timers
+    for t in to_remove:
+        timers.remove(t)
+
+    if to_notify or to_remove:
         save_data("war_timers", war_timers)
+
+    if to_notify:
         for guild in bot.guilds:
             channel = discord.utils.get(guild.text_channels, name="rally-calls") or \
                       discord.utils.get(guild.text_channels, name="general-chat")
@@ -1344,7 +2225,7 @@ async def timer_check():
 @tasks.loop(hours=1)
 async def event_cycle_reminder():
     """Automatically announce events starting today based on the 4-week cycle."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     # Only fire at 8:00 UTC
     if now.hour != 8:
         return
@@ -1392,7 +2273,7 @@ async def event_cycle_reminder():
                     embed.add_field(name="Duration", value=f"{duration} day{'s' if duration != 1 else ''}", inline=True)
                     embed.add_field(name="Type", value=ev.get("type", "event").title(), inline=True)
                     embed.add_field(name="Cycle Day", value=f"{today + 1}/28", inline=True)
-                    embed.set_footer(text="🤖 Auto-reminder | Use !nextevent for upcoming events")
+                    embed.set_footer(text="🤖 Auto-reminder | Use /nextevent for upcoming events")
                     try:
                         await channel.send(embed=embed)
                         announced_today["events"].append(name)

@@ -25,7 +25,7 @@
     {
       "name": "strongest_governor_start",
       "channel": "announcements",
-      "message": "👑 **Strongest Governor Starts Today!** (7-day event)\n\n📋 **Daily Schedule:**\nDay 1: City Construction\nDay 2: Hero Development\nDay 3: Basic Skills Up\nDay 4: Combat Training\nDay 5: Basic Skills Up\nDay 6: Combat Training\nDay 7: Hero Development\n\n⏰ Daily reset at 00:00 UTC. Hoard speedups & resources beforehand!\nUse `!event strongest_governor` for the full guide.",
+      "message": "👑 **Strongest Governor Starts Today!** (7-day event)\n\n📋 **Daily Schedule:**\nDay 1: City Construction\nDay 2: Hero Development\nDay 3: Basic Skills Up\nDay 4: Combat Training\nDay 5: Basic Skills Up\nDay 6: Combat Training\nDay 7: Hero Development\n\n⏰ Daily reset at 00:00 UTC. Hoard speedups & resources beforehand!\nUse `/event strongest_governor` for the full guide.",
       "cron": "0 8 * * 1",
       "enabled": false,
       "notes": "Enable when SG week starts — occurs monthly (Week 1 of 4-week cycle)"
@@ -42,7 +42,7 @@
     {
       "name": "alliance_brawl_start",
       "channel": "announcements",
-      "message": "💥 **Alliance Brawl Starts Today!** (7-day event)\n\n📋 **Daily Stages & Horn Values:**\nDay 1: Rise of the City (1 horn)\nDay 2: Hero Development (2 horns)\nDay 3: Pet Training (2 horns)\nDay 4: Gear Enhancement (2 horns)\nDay 5: Trade Baron (2 horns)\nDay 6: Full-Scale Competition (4 horns!) ← DECISIVE DAY\n\n⚠️ Day 6 alone can decide the entire Brawl! Save your best push for it.\nUse `!event alliance_brawl` for the full guide.",
+      "message": "💥 **Alliance Brawl Starts Today!** (7-day event)\n\n📋 **Daily Stages & Horn Values:**\nDay 1: Rise of the City (1 horn)\nDay 2: Hero Development (2 horns)\nDay 3: Pet Training (2 horns)\nDay 4: Gear Enhancement (2 horns)\nDay 5: Trade Baron (2 horns)\nDay 6: Full-Scale Competition (4 horns!) ← DECISIVE DAY\n\n⚠️ Day 6 alone can decide the entire Brawl! Save your best push for it.\nUse `/event alliance_brawl` for the full guide.",
       "cron": "0 8 * * 1",
       "enabled": false,
       "notes": "Enable when Brawl week starts — occurs monthly (Week 2 of 4-week cycle)"
@@ -67,7 +67,7 @@
     {
       "name": "swordland_showdown_voting",
       "channel": "announcements",
-      "message": "⚔️ **Swordland Showdown — Voting Phase Started!** (2 days)\n\nAlliance members: vote for your preferred battle time NOW!\nOfficers will register based on the most popular time slot.\n\n📅 Schedule: Voting (2d) → Registration (2d) → Matchmaking (2d) → Battle (1hr)\nUse `!event swordland_showdown` for the full guide.",
+      "message": "⚔️ **Swordland Showdown — Voting Phase Started!** (2 days)\n\nAlliance members: vote for your preferred battle time NOW!\nOfficers will register based on the most popular time slot.\n\n📅 Schedule: Voting (2d) → Registration (2d) → Matchmaking (2d) → Battle (1hr)\nUse `/event swordland_showdown` for the full guide.",
       "cron": "0 8 * * 1",
       "enabled": false,
       "notes": "Enable when SLS voting starts — occurs bi-weekly (every 14 days)"
@@ -84,7 +84,7 @@
     {
       "name": "all_out_kill_event",
       "channel": "announcements",
-      "message": "💀 **ALL OUT (Kill Event) Starts Today!** (2 days)\n\n⚠️ **SHIELD UP if you're not participating!**\n\nKill points from enemy troops earn individual & alliance rewards.\nCoordinate rallies, flag targets, and stay in comms!\nUse `!event all_out` for hero/troop recommendations.",
+      "message": "💀 **ALL OUT (Kill Event) Starts Today!** (2 days)\n\n⚠️ **SHIELD UP if you're not participating!**\n\nKill points from enemy troops earn individual & alliance rewards.\nCoordinate rallies, flag targets, and stay in comms!\nUse `/event all_out` for hero/troop recommendations.",
       "cron": "0 8 * * 5",
       "enabled": false,
       "notes": "Enable on KE week — occurs in Week 4 of cycle"
@@ -93,7 +93,7 @@
     {
       "name": "kvk_matchmaking",
       "channel": "announcements",
-      "message": "🌍 **Kingdom of Power (KvK) — Matchmaking Started!** (2 days)\n\n📅 **Phase Schedule:**\nMatchmaking: Sat-Sun\nPreparation: 5 days (scout enemy kingdoms!)\nBattle: 12 hours (borders open 10:00-22:00 UTC, castle siege at 12:00 UTC)\n\nStart prepping NOW — heal troops, stock resources, coordinate with kingdom chat!\nUse `!event kvk` for the full guide.",
+      "message": "🌍 **Kingdom of Power (KvK) — Matchmaking Started!** (2 days)\n\n📅 **Phase Schedule:**\nMatchmaking: Sat-Sun\nPreparation: 5 days (scout enemy kingdoms!)\nBattle: 12 hours (borders open 10:00-22:00 UTC, castle siege at 12:00 UTC)\n\nStart prepping NOW — heal troops, stock resources, coordinate with kingdom chat!\nUse `/event kvk` for the full guide.",
       "cron": "0 8 * * 6",
       "enabled": false,
       "notes": "Enable when KvK matchmaking begins — occurs every 4 weeks"
@@ -110,7 +110,7 @@
     {
       "name": "sanctuary_battle",
       "channel": "war-planning",
-      "message": "🏛️ **Sanctuary Battle Reminder!**\n\nCheck your alliance's voted battle time (options: 03:00, 09:00, 13:00, 14:00, or 17:00 UTC).\nMake sure you're online and ready before it starts!\n\nUse `!event sanctuary` for strategy tips.",
+      "message": "🏛️ **Sanctuary Battle Reminder!**\n\nCheck your alliance's voted battle time (options: 03:00, 09:00, 13:00, 14:00, or 17:00 UTC).\nMake sure you're online and ready before it starts!\n\nUse `/event sanctuary` for strategy tips.",
       "cron": "0 8 * * 3,6",
       "enabled": true,
       "notes": "Sanctuary battles happen on voted days — adjust cron as needed"
@@ -119,7 +119,7 @@
     {
       "name": "bear_hunt_reminder",
       "channel": "announcements",
-      "message": "🐻 **Bear Hunt (Pitfall) Available!**\n\nThe trap lasts 30 minutes — maximize alliance damage for better rewards!\nGo full offense — the bear deals NO return damage.\nRally leaders: start the hunt when most members are online.\n\nUse `!event bear_hunt` for the full guide.",
+      "message": "🐻 **Bear Hunt (Pitfall) Available!**\n\nThe trap lasts 30 minutes — maximize alliance damage for better rewards!\nGo full offense — the bear deals NO return damage.\nRally leaders: start the hunt when most members are online.\n\nUse `/event bear_hunt` for the full guide.",
       "cron": "0 17 * * 2,4,6",
       "enabled": true,
       "notes": "Bear Hunt available every 2 days — adjust to your alliance schedule"
@@ -136,7 +136,7 @@
     {
       "name": "merchant_empire",
       "channel": "announcements",
-      "message": "🐫 **Merchant Empire Active!** (7-day trading event)\n\nSend caravans, escort allies, raid enemies. Max 4 caravans/day.\nUse `!event merchant_empire` for the full guide.",
+      "message": "🐫 **Merchant Empire Active!** (7-day trading event)\n\nSend caravans, escort allies, raid enemies. Max 4 caravans/day.\nUse `/event merchant_empire` for the full guide.",
       "cron": "0 9 * * 1",
       "enabled": false,
       "notes": "Enable when Merchant Empire starts — runs concurrently with Brawl"
