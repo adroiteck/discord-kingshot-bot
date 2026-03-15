@@ -1,4 +1,4 @@
-"""Game API cog — Kingshot gift code redemption, player lookup, auto-redeem."""
+"""Game API cog — Kingshot gift code redemption, player lookup, auto-redeem from linked channel."""
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -7,11 +7,12 @@ import hashlib
 import time
 import logging
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
 from utils import (
-    load_data, save_data, utc_now, cooldown, PaginatorView, LEADER_ROLES
+    load_data, save_data, utc_now, cooldown, PaginatorView, LEADER_ROLES, load_config
 )
 
 log = logging.getLogger("kingshot-bot")
@@ -24,6 +25,29 @@ API_SALT = "mN4!pQs6JrYwV9"
 HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded",
     "Accept": "application/json",
+}
+
+# Channel ID where official gift codes are forwarded/linked
+GIFTCODE_WATCH_CHANNEL = 1480215871359029351
+
+# Gift code pattern — alphanumeric, 6-30 chars, often with mixed case
+# Typical codes: KS2025SPRING, KINGSHOTGIFT, NEWYEAR2025, etc.
+GIFT_CODE_PATTERN = re.compile(r'\b([A-Za-z0-9]{6,30})\b')
+
+# Words to exclude from code detection (common English words that match the pattern)
+CODE_EXCLUDE = {
+    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her",
+    "was", "one", "our", "out", "has", "his", "how", "its", "may", "new", "now",
+    "old", "see", "way", "who", "did", "get", "let", "say", "she", "too", "use",
+    "from", "have", "this", "that", "with", "they", "been", "said", "each",
+    "which", "their", "will", "other", "about", "many", "then", "them", "would",
+    "make", "like", "time", "very", "when", "come", "could", "more", "some",
+    "what", "than", "first", "also", "into", "just", "your", "over", "such",
+    "after", "year", "most", "only", "made", "find", "here", "thing", "give",
+    "codes", "code", "gift", "free", "link", "click", "redeem", "reward",
+    "rewards", "claim", "today", "check", "hello", "everyone", "update",
+    "kingshot", "whiteout", "survival", "discord", "server", "channel",
+    "https", "http", "www", "com", "org", "message", "posted", "official",
 }
 
 # Error code mapping
@@ -69,7 +93,7 @@ def _make_redeem_payload(fid: str, code: str) -> dict:
 
 
 async def api_get_player(session: aiohttp.ClientSession, fid: str) -> dict:
-    """Fetch player info from Kingshot API. Returns dict with nickname, furnace level, etc."""
+    """Fetch player info from Kingshot API."""
     payload = _make_login_payload(fid)
     try:
         async with session.post(f"{API_BASE}/player", data=payload, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as resp:
@@ -83,12 +107,8 @@ async def api_get_player(session: aiohttp.ClientSession, fid: str) -> dict:
 async def api_redeem_code(session: aiohttp.ClientSession, fid: str, code: str) -> dict:
     """Redeem a gift code for a player. Returns API response dict."""
     # First login/authenticate
-    login_result = await api_get_player(session, fid)
-    if login_result.get("err_code", -1) != 0 and login_result.get("code", -1) != 0:
-        # Try anyway — some API versions don't require pre-login
-        pass
-
-    await asyncio.sleep(1)  # Small delay between login and redeem
+    await api_get_player(session, fid)
+    await asyncio.sleep(1)
 
     payload = _make_redeem_payload(fid, code)
     try:
@@ -100,6 +120,60 @@ async def api_redeem_code(session: aiohttp.ClientSession, fid: str, code: str) -
         return {"err_code": -1, "msg": str(e)}
 
 
+def _extract_codes_from_message(content: str) -> list[str]:
+    """Extract potential gift codes from a message. Returns list of candidate codes."""
+    candidates = GIFT_CODE_PATTERN.findall(content)
+    codes = []
+    for c in candidates:
+        # Skip if it's a common word
+        if c.lower() in CODE_EXCLUDE:
+            continue
+        # Skip if all lowercase (real codes almost always have uppercase or digits)
+        if c.islower():
+            continue
+        # Skip if it's purely numeric (not a code, probably a number)
+        if c.isdigit():
+            continue
+        # Must contain at least one letter and one digit, OR be all-caps with 8+ chars
+        has_letter = any(ch.isalpha() for ch in c)
+        has_digit = any(ch.isdigit() for ch in c)
+        if (has_letter and has_digit) or (c.isupper() and len(c) >= 8):
+            codes.append(c.upper())
+    return list(dict.fromkeys(codes))  # deduplicate preserving order
+
+
+async def _redeem_for_all(session: aiohttp.ClientSession, code: str, report_channel: Optional[discord.TextChannel] = None) -> dict:
+    """Redeem a code for all registered players. Returns results dict."""
+    players = registered_players["players"]
+    results = {"success": 0, "already_claimed": 0, "failed": 0, "invalid": False, "expired": False}
+
+    for uid, player in players.items():
+        fid = player["fid"]
+        try:
+            resp = await api_redeem_code(session, fid, code)
+            err_code = resp.get("err_code", resp.get("code", -1))
+
+            if err_code == 20000 or err_code == 0:
+                results["success"] += 1
+            elif err_code in (40008, 40011):
+                results["already_claimed"] += 1
+            elif err_code == 40014:
+                results["invalid"] = True
+                break
+            elif err_code == 40007:
+                results["expired"] = True
+                break
+            else:
+                results["failed"] += 1
+        except Exception as e:
+            results["failed"] += 1
+            log.warning(f"Redeem error {fid}/{code}: {e}")
+
+        await asyncio.sleep(RATE_LIMIT_DELAY)
+
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
@@ -107,6 +181,7 @@ class GameAPI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._session: Optional[aiohttp.ClientSession] = None
+        self._processing_codes: set[str] = set()  # prevent duplicate processing
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -124,6 +199,128 @@ class GameAPI(commands.Cog):
             self.auto_redeem_check.start()
 
     # -----------------------------------------------------------------------
+    # MESSAGE WATCHER — Auto-detect codes from the linked official channel
+    # -----------------------------------------------------------------------
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Watch the linked official gift code channel and auto-redeem detected codes."""
+        # Only watch the specific linked channel
+        if message.channel.id != GIFTCODE_WATCH_CHANNEL:
+            return
+
+        # Ignore bot's own messages
+        if message.author == self.bot.user:
+            return
+
+        # Combine message content + embed text for code extraction
+        text_parts = [message.content]
+        for embed in message.embeds:
+            if embed.title:
+                text_parts.append(embed.title)
+            if embed.description:
+                text_parts.append(embed.description)
+            for field in embed.fields:
+                text_parts.append(field.name)
+                text_parts.append(field.value)
+        full_text = " ".join(text_parts)
+
+        # Extract potential codes
+        codes = _extract_codes_from_message(full_text)
+        if not codes:
+            return
+
+        players = registered_players["players"]
+        if not players:
+            log.info(f"Gift code(s) detected {codes} but no players registered")
+            return
+
+        session = await self._get_session()
+
+        for code in codes:
+            # Skip if already processed or currently processing
+            already_done = any(c["code"] == code for c in code_history["codes"])
+            if already_done or code in self._processing_codes:
+                continue
+
+            self._processing_codes.add(code)
+            log.info(f"Auto-detected gift code: {code} — validating...")
+
+            # Quick validation: try on the first registered player
+            first_fid = next(iter(players.values()))["fid"]
+            test_resp = await api_redeem_code(session, first_fid, code)
+            test_err = test_resp.get("err_code", test_resp.get("code", -1))
+
+            if test_err == 40014:
+                log.info(f"Code {code} is not a valid gift code, skipping")
+                self._processing_codes.discard(code)
+                continue
+            if test_err == 40007:
+                log.info(f"Code {code} is expired, skipping")
+                self._processing_codes.discard(code)
+                continue
+
+            # Valid code — count the first player's result and redeem for the rest
+            log.info(f"Code {code} is valid! Redeeming for {len(players)} players...")
+
+            results = {"success": 0, "already_claimed": 0, "failed": 0}
+            if test_err == 20000 or test_err == 0:
+                results["success"] = 1
+            elif test_err in (40008, 40011):
+                results["already_claimed"] = 1
+            else:
+                results["failed"] = 1
+
+            # Redeem for remaining players
+            remaining = list(players.items())[1:]
+            for uid, player in remaining:
+                fid = player["fid"]
+                try:
+                    resp = await api_redeem_code(session, fid, code)
+                    err_code = resp.get("err_code", resp.get("code", -1))
+                    if err_code == 20000 or err_code == 0:
+                        results["success"] += 1
+                    elif err_code in (40008, 40011):
+                        results["already_claimed"] += 1
+                    elif err_code == 40014:
+                        break  # code invalidated mid-run
+                    else:
+                        results["failed"] += 1
+                except Exception:
+                    results["failed"] += 1
+                await asyncio.sleep(RATE_LIMIT_DELAY)
+
+            # Record in history
+            code_history["codes"].append({
+                "code": code,
+                "submitted_by": "auto_watcher",
+                "submitted_at": utc_now().isoformat(),
+                "source_channel": str(GIFTCODE_WATCH_CHANNEL),
+                "results": results,
+            })
+            save_data("code_history", code_history)
+
+            # Post results to a bot-accessible channel (gift-codes or the watch channel)
+            guild = message.guild
+            report_ch = discord.utils.get(guild.text_channels, name="gift-codes") if guild else None
+            if report_ch:
+                embed = discord.Embed(
+                    title=f"🤖 Auto-Redeemed: `{code}`",
+                    description="Gift code detected from official channel and automatically redeemed!",
+                    color=discord.Color.green() if results["success"] > 0 else discord.Color.orange(),
+                )
+                embed.add_field(name="✅ Redeemed", value=str(results["success"]), inline=True)
+                embed.add_field(name="📦 Already Claimed", value=str(results["already_claimed"]), inline=True)
+                embed.add_field(name="❌ Failed", value=str(results["failed"]), inline=True)
+                embed.set_footer(text="Codes auto-detected from linked official channel")
+                try:
+                    await report_ch.send(embed=embed)
+                except Exception as e:
+                    log.warning(f"Could not post auto-redeem results: {e}")
+
+            log.info(f"Auto-redeem complete for {code}: {results}")
+            self._processing_codes.discard(code)
+
+    # -----------------------------------------------------------------------
     # /register — Link Discord user to in-game player ID
     # -----------------------------------------------------------------------
     @commands.hybrid_command(name="register")
@@ -135,11 +332,9 @@ class GameAPI(commands.Cog):
         """Link your Discord account to your Kingshot player ID for auto gift code redemption."""
         await ctx.defer(ephemeral=True)
 
-        # Validate the player ID with the game API
         session = await self._get_session()
         result = await api_get_player(session, player_id)
 
-        # Check if API returned valid player data
         player_data = result.get("data", {})
         nickname = player_data.get("nickname", None)
         furnace_lv = player_data.get("stove_lv", player_data.get("furnace_lv", None))
@@ -163,7 +358,7 @@ class GameAPI(commands.Cog):
             embed.add_field(name="Furnace Level", value=str(furnace_lv), inline=True)
         embed.add_field(
             name="What's Next?",
-            value="You'll now automatically receive gift code redemptions when leaders submit codes with `/submitcode`!",
+            value="Gift codes from the official channel will be **automatically redeemed** for you! You can also use `/redeemcode` to manually redeem codes.",
             inline=False,
         )
         embed.set_footer(text="Use /unregister to remove your link")
@@ -199,7 +394,6 @@ class GameAPI(commands.Cog):
 
         await ctx.defer(ephemeral=True)
 
-        # Refresh from API
         session = await self._get_session()
         result = await api_get_player(session, player["fid"])
         player_data = result.get("data", {})
@@ -218,19 +412,18 @@ class GameAPI(commands.Cog):
         await ctx.send(embed=embed, ephemeral=True)
 
     # -----------------------------------------------------------------------
-    # /submitcode — Redeem a gift code for all registered players (Leader only)
+    # /submitcode — Manual redeem for all (Leader only, backup to auto-watcher)
     # -----------------------------------------------------------------------
     @commands.hybrid_command(name="submitcode")
     @app_commands.describe(code="The gift code to redeem for all registered players")
     @commands.has_any_role(*LEADER_ROLES)
     @cooldown(60)
     async def submit_code(self, ctx: commands.Context, code: str):
-        """Redeem a gift code for ALL registered alliance members."""
+        """Manually redeem a gift code for ALL registered members (backup if auto-detect misses one)."""
         code = code.strip().upper()
 
-        # Check if already processed
         if code in [c["code"] for c in code_history["codes"]]:
-            await ctx.send(f"⚠️ Code `{code}` has already been submitted before.", ephemeral=True)
+            await ctx.send(f"⚠️ Code `{code}` has already been processed.", ephemeral=True)
             return
 
         players = registered_players["players"]
@@ -247,7 +440,6 @@ class GameAPI(commands.Cog):
         )
         status_msg = await ctx.send(embed=embed)
 
-        # Process redemptions
         session = await self._get_session()
         results = {"success": 0, "already_claimed": 0, "failed": 0, "errors": []}
         processed = 0
@@ -263,7 +455,6 @@ class GameAPI(commands.Cog):
                 elif err_code in (40008, 40011):
                     results["already_claimed"] += 1
                 elif err_code == 40014:
-                    # Invalid code — stop processing
                     results["errors"].append(f"Code `{code}` is invalid")
                     break
                 elif err_code == 40007:
@@ -273,16 +464,13 @@ class GameAPI(commands.Cog):
                     results["failed"] += 1
                     msg = ERR_CODES.get(err_code, resp.get("msg", f"Error {err_code}"))
                     results["errors"].append(f"{player.get('nickname', fid)}: {msg}")
-
             except Exception as e:
                 results["failed"] += 1
                 results["errors"].append(f"{player.get('nickname', fid)}: {str(e)[:50]}")
 
             processed += 1
-            # Rate limiting
             await asyncio.sleep(RATE_LIMIT_DELAY)
 
-            # Update progress every 10 players
             if processed % 10 == 0:
                 embed.description = f"Processing... **{processed}/{len(players)}** done"
                 try:
@@ -290,19 +478,15 @@ class GameAPI(commands.Cog):
                 except Exception:
                     pass
 
-        # Final results
         embed = discord.Embed(title=f"🎁 Code `{code}` — Results", color=discord.Color.green() if results["success"] > 0 else discord.Color.red())
         embed.add_field(name="✅ Redeemed", value=str(results["success"]), inline=True)
         embed.add_field(name="📦 Already Claimed", value=str(results["already_claimed"]), inline=True)
         embed.add_field(name="❌ Failed", value=str(results["failed"]), inline=True)
         if results["errors"]:
-            error_text = "\n".join(results["errors"][:10])
-            embed.add_field(name="⚠️ Notes", value=error_text, inline=False)
+            embed.add_field(name="⚠️ Notes", value="\n".join(results["errors"][:10]), inline=False)
         embed.set_footer(text=f"Submitted by {ctx.author.display_name}")
-
         await status_msg.edit(embed=embed)
 
-        # Record in history
         code_history["codes"].append({
             "code": code,
             "submitted_by": str(ctx.author.id),
@@ -359,12 +543,14 @@ class GameAPI(commands.Cog):
         for c in reversed(codes[-20:]):
             ts = datetime.fromisoformat(c["submitted_at"])
             res = c.get("results", {})
+            source = "🤖" if c.get("submitted_by") == "auto_watcher" else "👤"
             lines.append(
-                f"`{c['code']}` — ✅{res.get('success', 0)} 📦{res.get('already_claimed', 0)} ❌{res.get('failed', 0)} — <t:{int(ts.timestamp())}:R>"
+                f"{source} `{c['code']}` — ✅{res.get('success', 0)} 📦{res.get('already_claimed', 0)} ❌{res.get('failed', 0)} — <t:{int(ts.timestamp())}:R>"
             )
 
         embed = discord.Embed(title="📋 Gift Code History", description="\n".join(lines), color=discord.Color.blue())
-        embed.set_footer(text=f"{len(codes)} codes submitted total")
+        embed.add_field(name="Legend", value="🤖 = Auto-detected from official channel\n👤 = Manually submitted", inline=False)
+        embed.set_footer(text=f"{len(codes)} codes processed total")
         await ctx.send(embed=embed, ephemeral=True)
 
     # -----------------------------------------------------------------------
@@ -388,7 +574,6 @@ class GameAPI(commands.Cog):
             furnace = p.get("furnace_lv", "?")
             lines.append(f"**{name}** → `{p['fid']}` | {nickname} | Furnace Lv.{furnace}")
 
-        # Paginate if many players
         if len(lines) <= 15:
             embed = discord.Embed(
                 title=f"📋 Registered Players ({len(players)})",
@@ -459,12 +644,11 @@ class GameAPI(commands.Cog):
             await ctx.send(f"❌ Could not find player with FID `{player_id}`. Check the ID and try again.", ephemeral=True)
             return
 
-        embed = discord.Embed(title=f"🔍 Player Lookup", color=discord.Color.blue())
+        embed = discord.Embed(title="🔍 Player Lookup", color=discord.Color.blue())
         embed.add_field(name="FID", value=player_id, inline=True)
         embed.add_field(name="Nickname", value=pdata.get("nickname", "?"), inline=True)
         furnace = pdata.get("stove_lv", pdata.get("furnace_lv", "?"))
         embed.add_field(name="Furnace Level", value=str(furnace), inline=True)
-        # Include any other fields the API returns
         if pdata.get("kid"):
             embed.add_field(name="Kingdom", value=str(pdata["kid"]), inline=True)
         if pdata.get("avatar_image"):
@@ -472,11 +656,11 @@ class GameAPI(commands.Cog):
         await ctx.send(embed=embed, ephemeral=True)
 
     # -----------------------------------------------------------------------
-    # Background task: auto-redeem pending codes
+    # Background task: process queued auto-redeem codes
     # -----------------------------------------------------------------------
     @tasks.loop(minutes=5)
     async def auto_redeem_check(self):
-        """Check for pending auto-redeem codes and process them."""
+        """Process any queued auto-redeem codes."""
         pending = auto_redeem_codes.get("pending", [])
         if not pending:
             return
@@ -487,13 +671,11 @@ class GameAPI(commands.Cog):
         remaining_fids = code_entry.get("remaining_fids", [])
 
         if not remaining_fids:
-            # Move to completed
             auto_redeem_codes["completed"].append(code_entry)
             auto_redeem_codes["pending"].pop(0)
             save_data("auto_redeem_codes", auto_redeem_codes)
             return
 
-        # Process up to 10 players per cycle
         batch = remaining_fids[:10]
         for fid in batch:
             try:

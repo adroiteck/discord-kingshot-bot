@@ -4,6 +4,7 @@
   "announcement_channel": "announcements",
   "welcome_channel": "welcome",
   "officer_channel": "officer-chat",
+  "giftcode_watch_channel": "1480215871359029351",
   "default_member_role": "Member",
   "recruit_role": "Recruit",
   "scheduled_announcements": [
