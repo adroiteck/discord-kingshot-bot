@@ -64,9 +64,32 @@ def load_data(name, default=None):
             return json.load(f)
     return default or {}
 
+def _save_data_sync(name, data):
+    """Synchronous save — runs in thread executor to avoid blocking event loop."""
+    path = DATA_PATH / f"{name}.json"
+    tmp_path = DATA_PATH / f"{name}.json.tmp"
+    try:
+        content = json.dumps(data, indent=2)
+        with open(tmp_path, "w") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(str(tmp_path), str(path))
+    except Exception as e:
+        log.error(f"Failed to save {name}: {e}")
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
 def save_data(name, data):
-    with open(DATA_PATH / f"{name}.json", "w") as f:
-        json.dump(data, f, indent=2)
+    """Save data non-blocking. If event loop is running, offload to executor."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _save_data_sync, name, data)
+    except RuntimeError:
+        # No event loop — save synchronously (e.g. during startup)
+        _save_data_sync(name, data)
 
 config = load_config()
 
@@ -623,10 +646,10 @@ async def on_ready():
     # Register persistent views for role panel
     bot.add_view(RolePanelView())
 
-    scheduled_announcements.start()
-    daily_tip_task.start()
-    timer_check.start()
-    event_cycle_reminder.start()
+    # Start background tasks (guard against re-entry on reconnect)
+    for task in (scheduled_announcements, daily_tip_task, timer_check, event_cycle_reminder):
+        if not task.is_running():
+            task.start()
     try:
         guild_obj = discord.Object(id=int(config.get("guild_id", "0")))
         bot.tree.copy_global_to(guild=guild_obj)
