@@ -84,6 +84,7 @@ RATE_LIMIT_DELAY = 2.5  # seconds between requests
 registered_players = load_data("registered_players", {"players": {}})
 code_history = load_data("code_history", {"codes": []})
 auto_redeem_codes = load_data("auto_redeem_codes", {"pending": [], "completed": []})
+gift_codes = load_data("gift_codes", {"codes": []})
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +343,52 @@ class GameAPI(commands.Cog):
         self._processing_codes.discard(code)
 
     # -----------------------------------------------------------------------
+    # CATCH-UP REDEMPTION — Redeem all active codes for a single new player
+    # -----------------------------------------------------------------------
+    async def catch_up_redeem(self, fid: str, discord_name: str, guild: discord.Guild | None = None):
+        """Redeem all active (non-expired) gift codes for a newly registered player."""
+        active_codes = [c["code"] for c in gift_codes.get("codes", []) if not c.get("expired")]
+        if not active_codes:
+            log.info(f"Catch-up redeem for {discord_name}: no active codes")
+            return
+
+        log.info(f"Catch-up redeem for {discord_name} (FID {fid}): {len(active_codes)} active code(s)")
+        session = await self._get_session()
+        results = {"success": 0, "already_claimed": 0, "failed": 0}
+
+        for code in active_codes:
+            try:
+                resp = await api_redeem_code(session, fid, code.upper())
+                err_code = resp.get("err_code", resp.get("code", -1))
+                if err_code in (20000, 0):
+                    results["success"] += 1
+                elif err_code in (40008, 40011):
+                    results["already_claimed"] += 1
+                elif err_code == 40014:
+                    log.info(f"Catch-up: code {code} invalid, skipping")
+                elif err_code == 40007:
+                    log.info(f"Catch-up: code {code} expired, skipping")
+                else:
+                    results["failed"] += 1
+            except Exception as e:
+                log.warning(f"Catch-up redeem error for {code}: {e}")
+                results["failed"] += 1
+            await asyncio.sleep(RATE_LIMIT_DELAY)
+
+        log.info(f"Catch-up redeem done for {discord_name}: {results}")
+
+        # Notify in gift-codes channel
+        if guild and results["success"] > 0:
+            report_ch = discord.utils.get(guild.text_channels, name="gift-codes")
+            if report_ch:
+                try:
+                    await report_ch.send(
+                        f"🆕 **{discord_name}** just registered — auto-redeemed **{results['success']}** active gift code(s) for them!"
+                    )
+                except Exception:
+                    pass
+
+    # -----------------------------------------------------------------------
     # MESSAGE WATCHER — Auto-detect codes from the linked official channel
     # -----------------------------------------------------------------------
     @commands.Cog.listener()
@@ -419,6 +466,9 @@ class GameAPI(commands.Cog):
         )
         embed.set_footer(text="Use /unregister to remove your link")
         await ctx.send(embed=embed, ephemeral=True)
+
+        # Catch-up: redeem all active gift codes for this new player
+        asyncio.create_task(self.catch_up_redeem(player_id, ctx.author.display_name, ctx.guild))
 
     # -----------------------------------------------------------------------
     # /unregister — Remove player ID link
