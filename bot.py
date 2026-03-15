@@ -2323,6 +2323,543 @@ async def approvesuggestion(ctx, index: int, action: str):
 
 
 # =========================================================================
+# Member Stats Gathering & Alliance Roster
+# =========================================================================
+member_stats = load_data("member_stats", {})
+
+TROOP_TIERS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11"]
+GENERATION_CHOICES = ["Gen 1", "Gen 2", "Gen 3", "Gen 4", "Gen 5"]
+
+
+class StatInputModal(discord.ui.Modal, title="Enter Your Stats"):
+    """Modal form for entering detailed game statistics."""
+    tc_level = discord.ui.TextInput(
+        label="Town Center Level",
+        placeholder="e.g. 25",
+        max_length=3,
+        required=True,
+    )
+    total_power = discord.ui.TextInput(
+        label="Total Power (use k/m/b)",
+        placeholder="e.g. 85m or 85000000",
+        max_length=15,
+        required=True,
+    )
+    highest_troop_tier = discord.ui.TextInput(
+        label="Highest Troop Tier Unlocked",
+        placeholder="e.g. T9 or T11",
+        max_length=4,
+        required=True,
+    )
+    generation = discord.ui.TextInput(
+        label="Server Generation (1-5)",
+        placeholder="e.g. 4",
+        max_length=1,
+        required=True,
+    )
+    top_heroes = discord.ui.TextInput(
+        label="Top 3 Heroes (name, star level)",
+        placeholder="e.g. Amadeus 5*, Hilde 4*, Zoe 4*",
+        style=discord.TextStyle.short,
+        max_length=100,
+        required=False,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        uid = str(interaction.user.id)
+
+        # Parse power with k/m/b
+        pwr = self.total_power.value.lower().replace(",", "").strip()
+        multiplier = 1
+        if pwr.endswith("k"):
+            multiplier = 1_000; pwr = pwr[:-1]
+        elif pwr.endswith("m"):
+            multiplier = 1_000_000; pwr = pwr[:-1]
+        elif pwr.endswith("b"):
+            multiplier = 1_000_000_000; pwr = pwr[:-1]
+        try:
+            power_val = int(float(pwr) * multiplier)
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid power value. Use numbers like `85m` or `85000000`.", ephemeral=True)
+            return
+
+        # Parse TC level
+        try:
+            tc = int(self.tc_level.value.strip())
+            if tc < 1 or tc > 35:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("❌ Town Center level must be a number between 1 and 35.", ephemeral=True)
+            return
+
+        # Parse generation
+        try:
+            gen = int(self.generation.value.strip())
+            if gen < 1 or gen > 5:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("❌ Generation must be 1-5.", ephemeral=True)
+            return
+
+        # Parse troop tier
+        tier_raw = self.highest_troop_tier.value.upper().strip().replace(" ", "")
+        if not tier_raw.startswith("T"):
+            tier_raw = "T" + tier_raw
+        if tier_raw not in TROOP_TIERS:
+            await interaction.response.send_message(f"❌ Invalid troop tier. Use one of: {', '.join(TROOP_TIERS)}", ephemeral=True)
+            return
+
+        # Save stats
+        if uid not in member_stats:
+            member_stats[uid] = {}
+
+        member_stats[uid].update({
+            "user_name": str(interaction.user),
+            "tc_level": tc,
+            "power": power_val,
+            "highest_tier": tier_raw,
+            "generation": gen,
+            "top_heroes": self.top_heroes.value.strip() if self.top_heroes.value else "",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        save_data("member_stats", member_stats)
+
+        # Also sync power to user_profiles
+        if uid not in user_profiles:
+            user_profiles[uid] = {}
+        user_profiles[uid]["power"] = power_val
+        save_data("profiles", user_profiles)
+
+        embed = discord.Embed(
+            title="✅ Stats Updated!",
+            color=discord.Color.green(),
+        )
+        embed.add_field(name="🏰 Town Center", value=f"Level {tc}", inline=True)
+        embed.add_field(name="⚡ Power", value=f"{power_val:,}", inline=True)
+        embed.add_field(name="🗡️ Highest Tier", value=tier_raw, inline=True)
+        embed.add_field(name="🌍 Generation", value=f"Gen {gen}", inline=True)
+        embed.add_field(name="🦸 Top Heroes", value=self.top_heroes.value or "Not set", inline=False)
+        embed.set_footer(text="Use /mystats to view • /updatetroops to set troop counts")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class TroopInputModal(discord.ui.Modal, title="Enter Your Troop Counts"):
+    """Modal form for entering troop counts by type."""
+    infantry = discord.ui.TextInput(
+        label="Infantry Count (use k/m)",
+        placeholder="e.g. 500k or 1.2m",
+        max_length=15,
+        required=True,
+    )
+    cavalry = discord.ui.TextInput(
+        label="Cavalry Count (use k/m)",
+        placeholder="e.g. 200k or 800000",
+        max_length=15,
+        required=True,
+    )
+    archers = discord.ui.TextInput(
+        label="Archer Count (use k/m)",
+        placeholder="e.g. 300k or 1m",
+        max_length=15,
+        required=True,
+    )
+    march_capacity = discord.ui.TextInput(
+        label="Max March Capacity",
+        placeholder="e.g. 250k or 250000",
+        max_length=15,
+        required=False,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        uid = str(interaction.user.id)
+
+        def parse_count(val):
+            v = val.lower().replace(",", "").strip()
+            mult = 1
+            if v.endswith("k"):
+                mult = 1_000; v = v[:-1]
+            elif v.endswith("m"):
+                mult = 1_000_000; v = v[:-1]
+            elif v.endswith("b"):
+                mult = 1_000_000_000; v = v[:-1]
+            return int(float(v) * mult)
+
+        try:
+            inf = parse_count(self.infantry.value)
+            cav = parse_count(self.cavalry.value)
+            arch = parse_count(self.archers.value)
+        except (ValueError, TypeError):
+            await interaction.response.send_message("❌ Invalid troop count. Use numbers like `500k` or `1200000`.", ephemeral=True)
+            return
+
+        march_cap = None
+        if self.march_capacity.value and self.march_capacity.value.strip():
+            try:
+                march_cap = parse_count(self.march_capacity.value)
+            except (ValueError, TypeError):
+                pass
+
+        if uid not in member_stats:
+            member_stats[uid] = {"user_name": str(interaction.user)}
+
+        total = inf + cav + arch
+        member_stats[uid].update({
+            "infantry": inf,
+            "cavalry": cav,
+            "archers": arch,
+            "total_troops": total,
+            "troop_pct_inf": round(inf / total * 100) if total > 0 else 0,
+            "troop_pct_cav": round(cav / total * 100) if total > 0 else 0,
+            "troop_pct_arch": round(arch / total * 100) if total > 0 else 0,
+            "troops_updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if march_cap:
+            member_stats[uid]["march_capacity"] = march_cap
+        save_data("member_stats", member_stats)
+
+        pct_inf = member_stats[uid]["troop_pct_inf"]
+        pct_cav = member_stats[uid]["troop_pct_cav"]
+        pct_arch = member_stats[uid]["troop_pct_arch"]
+
+        embed = discord.Embed(
+            title="🪖 Troop Counts Updated!",
+            color=discord.Color.green(),
+        )
+        embed.add_field(name="🛡️ Infantry", value=f"{inf:,} ({pct_inf}%)", inline=True)
+        embed.add_field(name="🐴 Cavalry", value=f"{cav:,} ({pct_cav}%)", inline=True)
+        embed.add_field(name="🏹 Archers", value=f"{arch:,} ({pct_arch}%)", inline=True)
+        embed.add_field(name="📊 Total Troops", value=f"{total:,}", inline=True)
+        if march_cap:
+            embed.add_field(name="🚶 March Cap", value=f"{march_cap:,}", inline=True)
+        embed.set_footer(text="Leadership uses /alliancestats to plan events with this data")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.hybrid_command(name="mystats", description="Enter or view your game stats (TC level, power, troops, heroes, generation)")
+async def mystats(ctx: commands.Context):
+    """Open the stats input form or view your current stats."""
+    uid = str(ctx.author.id)
+    data = member_stats.get(uid)
+
+    if data and data.get("tc_level"):
+        # Show current stats with an Update button
+        embed = discord.Embed(
+            title=f"📊 {ctx.author.display_name}'s Stats",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_thumbnail(url=ctx.author.display_avatar.url)
+        embed.add_field(name="🏰 Town Center", value=f"Level {data.get('tc_level', '?')}", inline=True)
+        embed.add_field(name="⚡ Power", value=f"{data.get('power', 0):,}", inline=True)
+        embed.add_field(name="🗡️ Highest Tier", value=data.get("highest_tier", "?"), inline=True)
+        embed.add_field(name="🌍 Generation", value=f"Gen {data.get('generation', '?')}", inline=True)
+        embed.add_field(name="🦸 Top Heroes", value=data.get("top_heroes", "Not set") or "Not set", inline=False)
+
+        if data.get("infantry") is not None:
+            troop_text = (
+                f"🛡️ Infantry: {data['infantry']:,} ({data.get('troop_pct_inf', 0)}%)\n"
+                f"🐴 Cavalry: {data['cavalry']:,} ({data.get('troop_pct_cav', 0)}%)\n"
+                f"🏹 Archers: {data['archers']:,} ({data.get('troop_pct_arch', 0)}%)\n"
+                f"📊 Total: {data.get('total_troops', 0):,}"
+            )
+            if data.get("march_capacity"):
+                troop_text += f"\n🚶 March Cap: {data['march_capacity']:,}"
+            embed.add_field(name="🪖 Troops", value=troop_text, inline=False)
+
+        updated = data.get("updated_at", "")
+        if updated:
+            try:
+                dt = datetime.fromisoformat(updated)
+                embed.set_footer(text=f"Last updated: {dt.strftime('%b %d, %Y')}")
+            except Exception:
+                pass
+
+        # Buttons to update
+        view = View()
+        update_btn = Button(label="Update Stats", style=discord.ButtonStyle.primary, emoji="📝")
+        troops_btn = Button(label="Update Troops", style=discord.ButtonStyle.secondary, emoji="🪖")
+
+        async def update_stats_callback(interaction: discord.Interaction):
+            if interaction.user.id != ctx.author.id:
+                await interaction.response.send_message("You can only update your own stats.", ephemeral=True)
+                return
+            await interaction.response.send_modal(StatInputModal())
+
+        async def update_troops_callback(interaction: discord.Interaction):
+            if interaction.user.id != ctx.author.id:
+                await interaction.response.send_message("You can only update your own troops.", ephemeral=True)
+                return
+            await interaction.response.send_modal(TroopInputModal())
+
+        update_btn.callback = update_stats_callback
+        troops_btn.callback = update_troops_callback
+        view.add_item(update_btn)
+        view.add_item(troops_btn)
+
+        await ctx.send(embed=embed, view=view, ephemeral=True)
+    else:
+        # First time — open the modal directly
+        if ctx.interaction:
+            await ctx.interaction.response.send_modal(StatInputModal())
+        else:
+            embed = discord.Embed(
+                description="Use the slash command `/mystats` to open the stats form!",
+                color=discord.Color.orange()
+            )
+            await ctx.send(embed=embed)
+
+
+@bot.hybrid_command(name="updatetroops", description="Enter your troop counts (infantry, cavalry, archers)")
+async def updatetroops(ctx: commands.Context):
+    """Open the troop count input form."""
+    if ctx.interaction:
+        await ctx.interaction.response.send_modal(TroopInputModal())
+    else:
+        await ctx.send("Use the slash command `/updatetroops` to open the troop form!")
+
+
+@bot.hybrid_command(name="alliancestats", description="[Leadership] View alliance-wide stats summary for event planning")
+@app_commands.default_permissions(manage_guild=True)
+async def alliancestats(ctx: commands.Context):
+    """View aggregated alliance stats for event planning."""
+    if not member_stats:
+        await ctx.send(embed=discord.Embed(description="No member stats yet. Ask members to use `/mystats`!", color=discord.Color.orange()), ephemeral=True)
+        return
+
+    total_members = len(member_stats)
+    powers = [d.get("power", 0) for d in member_stats.values() if d.get("power", 0) > 0]
+    tc_levels = [d.get("tc_level", 0) for d in member_stats.values() if d.get("tc_level", 0) > 0]
+    gens = [d.get("generation", 0) for d in member_stats.values() if d.get("generation", 0) > 0]
+    tiers = [d.get("highest_tier", "") for d in member_stats.values() if d.get("highest_tier")]
+
+    # Aggregate troop counts
+    total_inf = sum(d.get("infantry", 0) for d in member_stats.values())
+    total_cav = sum(d.get("cavalry", 0) for d in member_stats.values())
+    total_arch = sum(d.get("archers", 0) for d in member_stats.values())
+    total_troops = total_inf + total_cav + total_arch
+    members_with_troops = sum(1 for d in member_stats.values() if d.get("infantry") is not None)
+
+    # TC distribution
+    tc_25_plus = sum(1 for tc in tc_levels if tc >= 25)
+    tc_20_24 = sum(1 for tc in tc_levels if 20 <= tc < 25)
+    tc_under_20 = sum(1 for tc in tc_levels if tc < 20)
+
+    # Generation distribution
+    gen_counts = {}
+    for g in gens:
+        gen_counts[g] = gen_counts.get(g, 0) + 1
+
+    # Tier distribution
+    tier_counts = {}
+    for t in tiers:
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # Page 1: Overview
+    embed1 = discord.Embed(title="📊 Alliance Stats — Overview", color=discord.Color.gold())
+    embed1.add_field(name="👥 Members Registered", value=str(total_members), inline=True)
+    if powers:
+        embed1.add_field(name="⚡ Avg Power", value=f"{sum(powers)//len(powers):,}", inline=True)
+        embed1.add_field(name="⚡ Total Power", value=f"{sum(powers):,}", inline=True)
+        embed1.add_field(name="⚡ Power Range", value=f"{min(powers):,} — {max(powers):,}", inline=False)
+    if tc_levels:
+        embed1.add_field(name="🏰 TC Distribution", value=f"TC25+: **{tc_25_plus}** | TC20-24: **{tc_20_24}** | <TC20: **{tc_under_20}**", inline=False)
+    if gen_counts:
+        gen_text = " | ".join(f"Gen {g}: **{c}**" for g, c in sorted(gen_counts.items()))
+        embed1.add_field(name="🌍 Generations", value=gen_text, inline=False)
+
+    # Page 2: Troop Breakdown
+    embed2 = discord.Embed(title="📊 Alliance Stats — Troop Breakdown", color=discord.Color.gold())
+    embed2.add_field(name="👥 Members with Troop Data", value=f"{members_with_troops}/{total_members}", inline=True)
+    if total_troops > 0:
+        pct_i = round(total_inf / total_troops * 100)
+        pct_c = round(total_cav / total_troops * 100)
+        pct_a = round(total_arch / total_troops * 100)
+        embed2.add_field(name="📊 Total Troops", value=f"{total_troops:,}", inline=True)
+        embed2.add_field(name="\u200b", value="\u200b", inline=True)
+        embed2.add_field(name="🛡️ Infantry", value=f"{total_inf:,} ({pct_i}%)", inline=True)
+        embed2.add_field(name="🐴 Cavalry", value=f"{total_cav:,} ({pct_c}%)", inline=True)
+        embed2.add_field(name="🏹 Archers", value=f"{total_arch:,} ({pct_a}%)", inline=True)
+
+        # Event readiness assessment
+        readiness = []
+        if pct_a >= 70:
+            readiness.append("✅ **Bear Hunt:** Great archer ratio for max DPS")
+        elif pct_a >= 50:
+            readiness.append("⚠️ **Bear Hunt:** Could use more archers (aim for 80%+)")
+        else:
+            readiness.append("❌ **Bear Hunt:** Need significantly more archers")
+
+        if 40 <= pct_i <= 60 and pct_a >= 20:
+            readiness.append("✅ **Swordland/KvK:** Balanced PvP composition")
+        else:
+            readiness.append("⚠️ **Swordland/KvK:** Aim for 50% Inf / 20% Cav / 30% Arch")
+
+        if pct_i >= 50:
+            readiness.append("✅ **Garrison/Defense:** Strong infantry front line")
+        else:
+            readiness.append("⚠️ **Garrison/Defense:** Need more infantry for tanking")
+
+        embed2.add_field(name="🎯 Event Readiness", value="\n".join(readiness), inline=False)
+    else:
+        embed2.add_field(name="⚠️ No Troop Data", value="Ask members to use `/updatetroops`", inline=False)
+
+    if tier_counts:
+        tier_text = " | ".join(f"{t}: **{c}**" for t, c in sorted(tier_counts.items(), key=lambda x: TROOP_TIERS.index(x[0]) if x[0] in TROOP_TIERS else 0))
+        embed2.add_field(name="🗡️ Tier Distribution", value=tier_text, inline=False)
+
+    # Page 3: Top Members
+    embed3 = discord.Embed(title="📊 Alliance Stats — Top Members", color=discord.Color.gold())
+    sorted_by_power = sorted(
+        [(uid, d) for uid, d in member_stats.items() if d.get("power", 0) > 0],
+        key=lambda x: x[1]["power"], reverse=True
+    )
+    top_text = ""
+    for i, (uid, d) in enumerate(sorted_by_power[:15], 1):
+        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"#{i}"
+        name = d.get("user_name", "Unknown").split("#")[0]
+        tc = d.get("tc_level", "?")
+        tier = d.get("highest_tier", "?")
+        heroes = d.get("top_heroes", "")
+        hero_short = f" | {heroes}" if heroes else ""
+        top_text += f"{medal} **{name}** — {d['power']:,} | TC{tc} | {tier}{hero_short}\n"
+    embed3.add_field(name="🏆 Top 15 by Power", value=top_text or "No data", inline=False)
+    embed3.set_footer(text="Use /mystats to register • /updatetroops for troop counts")
+
+    pages = [embed1, embed2, embed3]
+    view = PaginatorView(pages)
+    await ctx.send(embed=pages[0], view=view, ephemeral=True)
+
+
+@bot.hybrid_command(name="eventready", description="[Leadership] Check alliance readiness for a specific event")
+@app_commands.describe(event="Event to check readiness for (bear, kvk, swordland, mystic, brawl)")
+@app_commands.default_permissions(manage_guild=True)
+async def eventready(ctx: commands.Context, event: str):
+    """Check how ready the alliance is for a specific event based on member stats."""
+    event_lower = event.lower()
+    if not member_stats:
+        await ctx.send(embed=discord.Embed(description="No member stats yet. Ask members to use `/mystats`!", color=discord.Color.orange()), ephemeral=True)
+        return
+
+    # Define ideal compositions and requirements per event
+    event_reqs = {
+        "bear": {
+            "name": "Bear Hunt",
+            "emoji": "🐻",
+            "ideal_inf": 1, "ideal_cav": 10, "ideal_arch": 89,
+            "joiner_inf": 0, "joiner_cav": 20, "joiner_arch": 80,
+            "min_tc": 15,
+            "notes": "Focus: Lethality stat. All archers, no defense needed.\nHost: Amadeus + Petra + Rosa (Gen 4+)\nJoiners S-tier: Vivian > Chenko > Amane",
+        },
+        "kvk": {
+            "name": "Kingdom of Power (KvK)",
+            "emoji": "👑",
+            "ideal_inf": 50, "ideal_cav": 20, "ideal_arch": 30,
+            "min_tc": 20,
+            "notes": "4 phases. Battle Window: 12h (10:00-22:00 UTC)\nAttack: Amadeus + Hilde + Marlin\nDefense: Zoe + Hilde + Saul",
+        },
+        "swordland": {
+            "name": "Swordland Showdown",
+            "emoji": "⚔️",
+            "ideal_inf": 50, "ideal_cav": 20, "ideal_arch": 30,
+            "min_tc": 15,
+            "notes": "Rush Stables first. Personal score > winning.\nGarrison: 60% Inf / 20% Cav / 20% Arch",
+        },
+        "mystic": {
+            "name": "Mystic Trial",
+            "emoji": "🔮",
+            "ideal_inf": 50, "ideal_cav": 20, "ideal_arch": 30,
+            "min_tc": 10,
+            "notes": "Varies by dungeon. 5 attempts/day, massive RNG.\nTomb: 30/20/50 | Frozen: 50/10/40 | Inferno: 40/30/30\nStorm: 20/40/40 | Verdant: 30/30/40 | Crystal: 50/20/30",
+        },
+        "brawl": {
+            "name": "Alliance Brawl",
+            "emoji": "💥",
+            "ideal_inf": 50, "ideal_cav": 20, "ideal_arch": 30,
+            "min_tc": 20,
+            "notes": "6.5-day event. Save Intel Missions for Days 2 & 4.\nDay 6 = 4 horns — decisive day!",
+        },
+    }
+
+    req = event_reqs.get(event_lower)
+    if not req:
+        events_list = ", ".join(event_reqs.keys())
+        await ctx.send(embed=discord.Embed(description=f"Unknown event. Choose from: {events_list}", color=discord.Color.red()), ephemeral=True)
+        return
+
+    # Analyze members
+    eligible = []
+    not_ready = []
+    no_data = []
+    min_tc = req.get("min_tc", 1)
+
+    for uid, d in member_stats.items():
+        tc = d.get("tc_level", 0)
+        if tc == 0:
+            no_data.append(d.get("user_name", "Unknown"))
+            continue
+        if tc >= min_tc:
+            eligible.append(d)
+        else:
+            not_ready.append(d)
+
+    # Aggregate eligible troops
+    elig_inf = sum(d.get("infantry", 0) for d in eligible)
+    elig_cav = sum(d.get("cavalry", 0) for d in eligible)
+    elig_arch = sum(d.get("archers", 0) for d in eligible)
+    elig_total = elig_inf + elig_cav + elig_arch
+
+    embed = discord.Embed(
+        title=f"{req['emoji']} {req['name']} — Readiness Report",
+        color=discord.Color.gold(),
+    )
+    embed.add_field(name="✅ Eligible (TC{min_tc}+)", value=str(len(eligible)), inline=True)
+    embed.add_field(name="❌ Not Ready", value=str(len(not_ready)), inline=True)
+    embed.add_field(name="❓ No Data", value=str(len(no_data)), inline=True)
+
+    if elig_total > 0:
+        cur_inf = round(elig_inf / elig_total * 100)
+        cur_cav = round(elig_cav / elig_total * 100)
+        cur_arch = round(elig_arch / elig_total * 100)
+
+        comp_text = (
+            f"**Current:** {cur_inf}% Inf / {cur_cav}% Cav / {cur_arch}% Arch\n"
+            f"**Ideal:** {req['ideal_inf']}% Inf / {req['ideal_cav']}% Cav / {req['ideal_arch']}% Arch"
+        )
+        embed.add_field(name="🪖 Troop Composition", value=comp_text, inline=False)
+
+        # Gap analysis
+        gaps = []
+        diff_inf = cur_inf - req["ideal_inf"]
+        diff_cav = cur_cav - req["ideal_cav"]
+        diff_arch = cur_arch - req["ideal_arch"]
+        if abs(diff_inf) > 10:
+            direction = "too many" if diff_inf > 0 else "need more"
+            gaps.append(f"🛡️ Infantry: {direction} ({abs(diff_inf)}% off)")
+        if abs(diff_cav) > 10:
+            direction = "too many" if diff_cav > 0 else "need more"
+            gaps.append(f"🐴 Cavalry: {direction} ({abs(diff_cav)}% off)")
+        if abs(diff_arch) > 10:
+            direction = "too many" if diff_arch > 0 else "need more"
+            gaps.append(f"🏹 Archers: {direction} ({abs(diff_arch)}% off)")
+
+        if gaps:
+            embed.add_field(name="⚠️ Composition Gaps", value="\n".join(gaps), inline=False)
+        else:
+            embed.add_field(name="✅ Composition", value="Alliance troop balance looks good for this event!", inline=False)
+
+    embed.add_field(name="📋 Event Notes", value=req["notes"], inline=False)
+
+    if no_data:
+        names = ", ".join(n.split("#")[0] for n in no_data[:10])
+        if len(no_data) > 10:
+            names += f" +{len(no_data) - 10} more"
+        embed.add_field(name="❓ Missing Stats", value=f"Members without data: {names}\nAsk them to use `/mystats`", inline=False)
+
+    embed.set_footer(text="Data based on member-submitted stats via /mystats and /updatetroops")
+    await ctx.send(embed=embed, ephemeral=True)
+
+
+# =========================================================================
 # Background Tasks
 # =========================================================================
 @tasks.loop(minutes=1)
