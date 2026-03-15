@@ -8,12 +8,13 @@ import time
 import logging
 import asyncio
 import re
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
 from utils import (
     load_data, save_data, utc_now, cooldown, PaginatorView, LEADER_ROLES, load_config,
-    load_event_cycle, EVENT_CYCLE_PATH, load_json_file
+    load_event_cycle, EVENT_CYCLE_PATH, load_json_file, sanitize_html
 )
 import json
 
@@ -23,14 +24,16 @@ log = logging.getLogger("kingshot-bot")
 # Kingshot Game API config
 # ---------------------------------------------------------------------------
 API_BASE = "https://kingshot-giftcode.centurygame.com/api"
-API_SALT = "mN4!pQs6JrYwV9"
+API_SALT = os.environ.get("KINGSHOT_API_SALT", "mN4!pQs6JrYwV9")
 HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded",
     "Accept": "application/json",
 }
 
-# Channel ID where official gift codes are forwarded/linked
-GIFTCODE_WATCH_CHANNEL = 1480215871359029351
+# Channel ID where official gift codes are forwarded/linked (from config.json)
+def _get_giftcode_watch_channel():
+    cfg = load_config()
+    return int(cfg.get("giftcode_watch_channel", "1480215871359029351"))
 
 # Gift code pattern — alphanumeric, 6-30 chars, often with mixed case
 # Typical codes: KS2025SPRING, KINGSHOTGIFT, NEWYEAR2025, etc.
@@ -79,8 +82,24 @@ ERR_CODES = {
     40014: "Invalid code",
 }
 
-# Rate limit: ~30 requests/minute to be safe
-RATE_LIMIT_DELAY = 2.5  # seconds between requests
+# Rate limiting with adaptive backoff
+RATE_LIMIT_DELAY = 2.5  # base seconds between requests
+_api_backoff = {"delay": 2.5, "consecutive_errors": 0, "last_success": 0}
+
+def _get_api_delay() -> float:
+    """Get current rate limit delay with adaptive backoff."""
+    return min(_api_backoff["delay"], 30.0)  # Cap at 30s
+
+def _api_success():
+    """Record successful API call — reduce backoff."""
+    _api_backoff["consecutive_errors"] = 0
+    _api_backoff["delay"] = RATE_LIMIT_DELAY
+    _api_backoff["last_success"] = time.time()
+
+def _api_error():
+    """Record API error — increase backoff exponentially."""
+    _api_backoff["consecutive_errors"] += 1
+    _api_backoff["delay"] = min(RATE_LIMIT_DELAY * (2 ** _api_backoff["consecutive_errors"]), 30.0)
 
 # In-memory stores
 registered_players = load_data("registered_players", {"players": {}})
@@ -151,8 +170,10 @@ async def api_get_player(session: aiohttp.ClientSession, fid: str) -> dict:
     try:
         async with session.post(f"{API_BASE}/player", data=payload, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             data = await resp.json()
+            _api_success()
             return data
     except Exception as e:
+        _api_error()
         log.error(f"API player lookup failed for {fid}: {e}")
         return {"err_code": -1, "msg": str(e)}
 
@@ -161,14 +182,16 @@ async def api_redeem_code(session: aiohttp.ClientSession, fid: str, code: str) -
     """Redeem a gift code for a player. Returns API response dict."""
     # First login/authenticate
     await api_get_player(session, fid)
-    await asyncio.sleep(1)
+    await asyncio.sleep(_get_api_delay())
 
     payload = _make_redeem_payload(fid, code)
     try:
         async with session.post(f"{API_BASE}/gift_code", data=payload, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             data = await resp.json()
+            _api_success()
             return data
     except Exception as e:
+        _api_error()
         log.error(f"API redeem failed for {fid}/{code}: {e}")
         return {"err_code": -1, "msg": str(e)}
 
@@ -434,7 +457,7 @@ class GameAPI(commands.Cog):
     async def on_message(self, message: discord.Message):
         """Watch the linked official gift code channel and auto-redeem detected codes."""
         # Only watch the specific linked channel
-        if message.channel.id != GIFTCODE_WATCH_CHANNEL:
+        if message.channel.id != _get_giftcode_watch_channel():
             return
 
         # Ignore bot's own messages
@@ -946,8 +969,8 @@ class GameAPI(commands.Cog):
                             embed.add_field(name="⏰ Expires", value=code_entry["expires"], inline=True)
                         try:
                             await report_ch.send(embed=embed)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.error(f"Failed to send wiki gift code embed: {e}")
 
                 # Trigger auto-redeem
                 if guild:
@@ -1055,6 +1078,8 @@ class GameAPI(commands.Cog):
             changes_found = []
 
             for update in updates:
+                # Sanitize scraped content before using in embeds
+                update["name"] = sanitize_html(update["name"], max_length=100)
                 name_lower = update["name"].lower().strip()
                 # Try fuzzy matching against existing events
                 matched_event = existing_events.get(name_lower)
@@ -1101,8 +1126,8 @@ class GameAPI(commands.Cog):
                         embed.set_footer(text="Source: kingshotwiki.com • Review & update with /event commands")
                         try:
                             await report_ch.send(embed=embed)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.error(f"Failed to send wiki event update embed: {e}")
 
                 # Save the raw scrape data for review
                 scrape_log = load_data("wiki_scrape_log", {"scrapes": []})

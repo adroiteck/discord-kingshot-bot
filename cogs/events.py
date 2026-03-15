@@ -2,8 +2,8 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from typing import List
 import random
+from difflib import get_close_matches
 from datetime import datetime, timedelta, timezone
 
 from utils import (
@@ -182,6 +182,22 @@ class Events(commands.Cog):
             if name in key or name in ev["name"].lower() or key.startswith(name):
                 matched = (key, ev); break
         if not matched:
+            # Fuzzy "did you mean?" suggestions
+            all_keys = list(EVENT_GUIDES.keys())
+            all_names = [ev["name"].lower() for ev in EVENT_GUIDES.values()]
+            close = get_close_matches(name, all_keys + all_names, n=3, cutoff=0.4)
+            if close:
+                # Map back to keys
+                fuzzy_keys = []
+                for c in close:
+                    if c in EVENT_GUIDES:
+                        fuzzy_keys.append(c)
+                    else:
+                        for k, ev in EVENT_GUIDES.items():
+                            if ev["name"].lower() == c:
+                                fuzzy_keys.append(k); break
+                suggestions = ", ".join(f"`{k}`" for k in dict.fromkeys(fuzzy_keys))
+                await ctx.send(f"❌ Event `{name}` not found. Did you mean: {suggestions}?", ephemeral=True); return
             suggestions = ", ".join(f"`{k}`" for k in EVENT_GUIDES.keys())
             await ctx.send(f"❌ Event `{name}` not found. Try: {suggestions}", ephemeral=True); return
         key, ev = matched

@@ -8,8 +8,12 @@ import asyncio
 
 from utils import (
     load_config, save_config, PaginatorView, ROLE_COLORS, LEADER_ROLES,
-    announcement_name_autocomplete, cooldown, utc_now, RolePanelView
+    announcement_name_autocomplete, cooldown, utc_now, RolePanelView,
+    log_mod_action, load_data
 )
+import json, logging
+
+log = logging.getLogger("kingshot-bot")
 
 
 class Moderation(commands.Cog):
@@ -88,6 +92,14 @@ class Moderation(commands.Cog):
     async def toggle_announcement(self, ctx: commands.Context, name: str):
         """Toggle a scheduled announcement on/off."""
         cfg = load_config()
+        # Backup config before modification
+        try:
+            from utils import CONFIG_PATH
+            import shutil
+            backup_path = CONFIG_PATH.with_suffix(".json.bak")
+            shutil.copy2(CONFIG_PATH, backup_path)
+        except Exception as e:
+            log.warning(f"Config backup failed: {e}")
         for ann in cfg.get("scheduled_announcements", []):
             if ann["name"] == name:
                 ann["enabled"] = not ann["enabled"]
@@ -107,6 +119,7 @@ class Moderation(commands.Cog):
         if not role:
             await ctx.send(f"❌ Role `{role_name}` not found."); return
         await member.add_roles(role)
+        log_mod_action("promote", ctx.author.display_name, member.display_name, f"Promoted to {role_name}")
         await ctx.send(f"✅ {member.display_name} promoted to **{role_name}**!")
 
     # --- /demote ---
@@ -120,6 +133,7 @@ class Moderation(commands.Cog):
         if not role:
             await ctx.send(f"❌ Role `{role_name}` not found."); return
         await member.remove_roles(role)
+        log_mod_action("demote", ctx.author.display_name, member.display_name, f"Removed from {role_name}")
         await ctx.send(f"✅ {member.display_name} removed from **{role_name}**.")
 
     # --- /kick ---
@@ -130,7 +144,19 @@ class Moderation(commands.Cog):
     async def kick_member(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No reason given"):
         """Kick a member."""
         await member.kick(reason=reason)
+        log_mod_action("kick", ctx.author.display_name, member.display_name, reason)
         await ctx.send(f"👢 {member.display_name} kicked. Reason: {reason}")
+        # Post to mod-log channel if it exists
+        mod_ch = discord.utils.get(ctx.guild.text_channels, name="mod-log")
+        if mod_ch:
+            embed = discord.Embed(title="👢 Member Kicked", color=discord.Color.red())
+            embed.add_field(name="Member", value=member.display_name, inline=True)
+            embed.add_field(name="By", value=ctx.author.display_name, inline=True)
+            embed.add_field(name="Reason", value=reason, inline=False)
+            try:
+                await mod_ch.send(embed=embed)
+            except Exception as e:
+                log.error(f"Failed to post to mod-log: {e}")
 
     # --- /mute ---
     @commands.hybrid_command(name="mute")
@@ -140,6 +166,7 @@ class Moderation(commands.Cog):
     async def mute_member(self, ctx: commands.Context, member: discord.Member, minutes: int = 10):
         """Timeout a member."""
         await member.timeout(timedelta(minutes=minutes), reason=f"Muted by {ctx.author.display_name}")
+        log_mod_action("mute", ctx.author.display_name, member.display_name, f"{minutes} minutes")
         await ctx.send(f"🔇 {member.display_name} muted for {minutes} minutes.")
 
     # --- /unmute ---
@@ -150,6 +177,7 @@ class Moderation(commands.Cog):
     async def unmute_member(self, ctx: commands.Context, member: discord.Member):
         """Remove timeout."""
         await member.timeout(None, reason=f"Unmuted by {ctx.author.display_name}")
+        log_mod_action("unmute", ctx.author.display_name, member.display_name)
         await ctx.send(f"🔊 {member.display_name} unmuted.")
 
     # --- /clear ---
@@ -181,6 +209,37 @@ class Moderation(commands.Cog):
             embed.add_field(name=role_name, value="\u200b", inline=False)
         await ctx.send(embed=embed, view=RolePanelView())
         await ctx.send("✅ Role panel posted!", ephemeral=True)
+
+
+    # --- /modlog ---
+    @commands.hybrid_command(name="modlog")
+    @app_commands.default_permissions(manage_guild=True)
+    @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership")
+    @cooldown(15)
+    async def mod_log_cmd(self, ctx: commands.Context):
+        """View recent moderation actions."""
+        mod_log = load_data("mod_log", {"actions": []})
+        actions = mod_log.get("actions", [])
+        if not actions:
+            await ctx.send("No moderation actions logged yet.", ephemeral=True); return
+        recent = actions[-15:]
+        embeds = []
+        per_page = 5
+        for i in range(0, len(recent), per_page):
+            page = list(reversed(recent[i:i+per_page]))
+            embed = discord.Embed(title="🛡️ Moderation Log", color=discord.Color.dark_grey())
+            for a in page:
+                embed.add_field(
+                    name=f"{a['action'].upper()} — {a.get('timestamp', '?')[:16]}",
+                    value=f"**By:** {a['moderator']}\n**Target:** {a['target']}\n**Reason:** {a.get('reason') or 'N/A'}",
+                    inline=False,
+                )
+            embed.set_footer(text=f"Showing {min(15, len(actions))} of {len(actions)} total actions")
+            embeds.append(embed)
+        if len(embeds) == 1:
+            await ctx.send(embed=embeds[0], ephemeral=True)
+        else:
+            await ctx.send(embed=embeds[0], view=PaginatorView(embeds), ephemeral=True)
 
 
 async def setup(bot):

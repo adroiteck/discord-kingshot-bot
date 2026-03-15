@@ -3,7 +3,6 @@ import asyncio
 import discord
 from discord.ext import commands
 from discord import app_commands
-from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -55,7 +54,7 @@ class General(commands.Cog):
         e3 = discord.Embed(title="🤖 Kingshot Bot — Admin & Moderation", color=discord.Color.dark_grey())
         e3.add_field(name="📢 Announcements 🔒", value="`/announce` `/listannouncements` `/toggleannouncement`", inline=False)
         e3.add_field(name="👥 Role Management 🔒", value="`/promote` `/demote` `/rolepanel`", inline=False)
-        e3.add_field(name="🛡️ Moderation 🔒", value="`/kick` `/mute` `/unmute` `/clear`", inline=False)
+        e3.add_field(name="🛡️ Moderation 🔒", value="`/kick` `/mute` `/unmute` `/clear` `/modlog`", inline=False)
         e3.add_field(name="🔧 Admin 🔒", value="`/setup` `/bot_health` `/data_stats`", inline=False)
         e3.add_field(name="🏆 Achievements", value="`/achievements` `/mvp`", inline=False)
         e3.set_footer(text="Page 3/3 — Admin & Moderation")
@@ -82,7 +81,7 @@ class General(commands.Cog):
         embed.add_field(name="⚡ Power", value=f"{data.get('power', 0):,}" if data.get("power") else "*Not set*", inline=True)
         embed.add_field(name="🏷️ Roles", value=", ".join(r.name for r in member.roles if r.name != "@everyone") or "None", inline=False)
         embed.add_field(name="📅 Joined", value=member.joined_at.strftime("%b %d, %Y") if member.joined_at else "Unknown", inline=True)
-        await ctx.send(embed=embed, ephemeral=viewing_self)
+        await ctx.send(embed=embed, ephemeral=True)
 
     # --- /setpower ---
     @commands.hybrid_command(name="setpower")

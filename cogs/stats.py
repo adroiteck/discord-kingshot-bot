@@ -2,8 +2,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from typing import List, Optional
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from utils import (
     load_data, save_data, utc_now, utc_from_iso, parse_power,

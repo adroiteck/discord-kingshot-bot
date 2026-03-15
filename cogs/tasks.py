@@ -152,8 +152,8 @@ class Tasks(commands.Cog):
                         if ch:
                             try:
                                 await ch.send(f"⏰ **{t['name']}** starts in less than 5 minutes!")
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                log.error(f"Failed to send timer warning for {t['name']}: {e}")
         if expired:
             war_timers["timers"] = [t for t in war_timers["timers"] if t not in expired]
             save_data("war_timers", war_timers)
@@ -186,8 +186,8 @@ class Tasks(commands.Cog):
                         )
                         try:
                             await ch.send(embed=embed)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.error(f"Failed to send event reminder for {ev['name']}: {e}")
 
     @event_cycle_reminder.before_loop
     async def before_event_cycle(self):
@@ -232,6 +232,45 @@ class Tasks(commands.Cog):
         if len(scouts["reports"]) < original_scouts:
             save_data("scout_reports", scouts)
             log.info(f"Cleaned {original_scouts - len(scouts['reports'])} old scout reports")
+
+        # Clean old power history (keep last 200 per user)
+        power_history = load_data("power_history", {})
+        trimmed_ph = False
+        for uid, entries in power_history.items():
+            if isinstance(entries, list) and len(entries) > 200:
+                power_history[uid] = entries[-200:]
+                trimmed_ph = True
+        if trimmed_ph:
+            save_data("power_history", power_history)
+            log.info("Trimmed power history entries (>200 per user)")
+
+        # Clean old territory logs (keep last 500)
+        territory = load_data("territory_log", {"entries": []})
+        if len(territory.get("entries", [])) > 500:
+            territory["entries"] = territory["entries"][-500:]
+            save_data("territory_log", territory)
+            log.info("Trimmed territory log to 500 entries")
+
+        # Clean old rally sessions (keep last 100)
+        rallies = load_data("rally_sessions", {"rallies": []})
+        if len(rallies.get("rallies", [])) > 100:
+            rallies["rallies"] = rallies["rallies"][-100:]
+            save_data("rally_sessions", rallies)
+            log.info("Trimmed rally sessions to 100 entries")
+
+        # Clean old war signups (keep last 50)
+        signups = load_data("war_signups", {"signups": []})
+        if len(signups.get("signups", [])) > 50:
+            signups["signups"] = signups["signups"][-50:]
+            save_data("war_signups", signups)
+            log.info("Trimmed war signups to 50 entries")
+
+        # Clean old code history (keep last 200)
+        code_hist = load_data("code_history", {"codes": []})
+        if len(code_hist.get("codes", [])) > 200:
+            code_hist["codes"] = code_hist["codes"][-200:]
+            save_data("code_history", code_hist)
+            log.info("Trimmed code history to 200 entries")
 
     @data_cleanup.before_loop
     async def before_cleanup(self):

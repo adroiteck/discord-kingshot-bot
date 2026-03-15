@@ -5,6 +5,7 @@ from discord import app_commands
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from discord.ui import View, Button, button
+import re
 
 from utils import (
     load_data, save_data, utc_now, utc_from_iso, format_delta,
@@ -148,8 +149,9 @@ class RallyCoordView(View):
         embed.add_field(name="👥 Participants", value=str(len(self.participants)), inline=True)
         try:
             await interaction.message.edit(embed=embed, view=self)
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("kingshot-bot").error(f"Failed to update rally embed: {e}")
 
 
 class MarchSizeModal(discord.ui.Modal, title="Set March Size"):
@@ -569,6 +571,13 @@ class War(commands.Cog):
     @cooldown(10)
     async def territory(self, ctx: commands.Context, zone: str, status: str = "captured", *, notes: str = ""):
         """Log territory status change."""
+        # Input validation
+        if len(zone) > 50:
+            await ctx.send("❌ Zone name too long (max 50 characters).", ephemeral=True); return
+        if not re.match(r'^[\w\s\-\.#]+$', zone):
+            await ctx.send("❌ Zone name contains invalid characters.", ephemeral=True); return
+        if status.lower() not in ("captured", "lost", "contested"):
+            await ctx.send("❌ Status must be `captured`, `lost`, or `contested`.", ephemeral=True); return
         entry = {
             "reporter_id": ctx.author.id, "reporter": ctx.author.display_name,
             "zone": zone, "status": status.lower(), "notes": notes,

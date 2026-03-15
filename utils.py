@@ -33,15 +33,17 @@ _bot_health = {"last_save_ok": None, "last_save_fail": None, "error_count": 0, "
 def get_bot_health():
     return _bot_health
 
-def load_config():
+def load_config() -> dict:
+    """Load the bot configuration from config.json."""
     with open(CONFIG_PATH) as f:
         return json.load(f)
 
-def save_config(cfg):
+def save_config(cfg: dict) -> None:
+    """Persist the bot configuration to config.json."""
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
 
-def load_data(name, default=None):
+def load_data(name: str, default=None):
     path = DATA_PATH / f"{name}.json"
     if path.exists():
         try:
@@ -99,16 +101,19 @@ def load_json_file(path: Path, default=None):
 # ---------------------------------------------------------------------------
 # Datetime helpers
 # ---------------------------------------------------------------------------
-def utc_now():
+def utc_now() -> datetime:
+    """Return the current UTC datetime (timezone-aware)."""
     return datetime.now(timezone.utc)
 
 def utc_from_iso(iso_str: str) -> datetime:
+    """Parse an ISO-8601 string into a timezone-aware UTC datetime."""
     dt = datetime.fromisoformat(iso_str)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
 
 def format_delta(td: timedelta) -> str:
+    """Format a timedelta as a human-readable string like '2d 5h 30m'."""
     total = int(td.total_seconds())
     if total < 0:
         return "Expired"
@@ -122,9 +127,42 @@ def format_delta(td: timedelta) -> str:
     return " ".join(parts)
 
 # ---------------------------------------------------------------------------
+# HTML sanitization (for wiki scraper output)
+# ---------------------------------------------------------------------------
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+def sanitize_html(text: str, max_length: int = 1024) -> str:
+    """Strip HTML tags and limit length for safe embed display."""
+    clean = _HTML_TAG_RE.sub("", text)
+    clean = clean.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
+    return clean[:max_length].strip()
+
+# ---------------------------------------------------------------------------
+# Moderation audit logging
+# ---------------------------------------------------------------------------
+def log_mod_action(action: str, moderator: str, target: str, reason: str = "", **extra):
+    """Log a moderation action to mod_log.json for audit trail."""
+    mod_log = load_data("mod_log", {"actions": []})
+    entry = {
+        "action": action,
+        "moderator": moderator,
+        "target": target,
+        "reason": reason,
+        "timestamp": utc_now().isoformat(),
+        **extra,
+    }
+    mod_log["actions"].append(entry)
+    # Keep last 500 entries
+    if len(mod_log["actions"]) > 500:
+        mod_log["actions"] = mod_log["actions"][-500:]
+    save_data("mod_log", mod_log)
+    log.info(f"MOD ACTION: {action} | by {moderator} | target {target} | reason: {reason}")
+
+# ---------------------------------------------------------------------------
 # Power parser (handles k/m/b suffixes)
 # ---------------------------------------------------------------------------
 def parse_power(power_str: str) -> Optional[int]:
+    """Parse a human-readable power string (e.g. '25m', '1.2b') into an integer."""
     power = power_str.lower().replace(",", "").strip()
     multiplier = 1
     if power.endswith("k"):
@@ -161,6 +199,7 @@ TZ_ALIASES = {
 }
 
 def resolve_timezone(tz_input: str) -> Optional[str]:
+    """Resolve a user-supplied timezone string to an IANA timezone name, or None if invalid."""
     tz_lower = tz_input.strip().lower().replace(" ", "_")
     if tz_lower in TZ_ALIASES:
         return TZ_ALIASES[tz_lower]
@@ -169,8 +208,13 @@ def resolve_timezone(tz_input: str) -> Optional[str]:
         sign = offset_match.group(1) or "+"
         hours = int(offset_match.group(2))
         mins = int(offset_match.group(3) or 0)
+        # Validate offset range: UTC-12 to UTC+14
+        if hours > 14 or (hours == 14 and mins > 0) or mins >= 60:
+            return None
         total_offset = hours * 60 + mins
         if sign == "-": total_offset = -total_offset
+        if total_offset < -720:  # UTC-12
+            return None
         if mins == 0:
             etc_name = f"Etc/GMT{'+' if total_offset <= 0 else '-'}{abs(hours)}"
             if etc_name in available_timezones():
@@ -188,16 +232,19 @@ def resolve_timezone(tz_input: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Event Cycle helpers
 # ---------------------------------------------------------------------------
-def load_event_cycle():
+def load_event_cycle() -> dict:
+    """Load the event cycle definition from event_cycle.json."""
     return load_json_file(EVENT_CYCLE_PATH, {"cycle_anchor": "2026-03-06", "cycle_length_days": 28, "events": []})
 
-def get_cycle_day(dt=None):
+def get_cycle_day(dt=None) -> int:
+    """Return the current day (0-indexed) within the 28-day event cycle."""
     cycle = load_event_cycle()
     anchor = datetime.strptime(cycle["cycle_anchor"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
     if dt is None: dt = utc_now()
     return (dt - anchor).days % cycle.get("cycle_length_days", 28)
 
-def get_active_events(dt=None):
+def get_active_events(dt=None) -> list:
+    """Return a list of event dicts that are active right now (or at the given datetime)."""
     cycle = load_event_cycle()
     cycle_len = cycle.get("cycle_length_days", 28)
     day = get_cycle_day(dt)
@@ -228,7 +275,8 @@ def get_active_events(dt=None):
                 if day >= start or day < (end % cycle_len): active.append(ev)
     return active
 
-def get_upcoming_events(days_ahead=7, dt=None):
+def get_upcoming_events(days_ahead: int = 7, dt=None) -> list:
+    """Return upcoming events as (days_until, start_date, event_dict) tuples, sorted by proximity."""
     cycle = load_event_cycle()
     cycle_len = cycle.get("cycle_length_days", 28)
     if dt is None: dt = utc_now()
@@ -272,17 +320,25 @@ def get_upcoming_events(days_ahead=7, dt=None):
 # Cron matcher
 # ---------------------------------------------------------------------------
 def cron_matches(cron_str: str, dt: datetime) -> bool:
+    """Check whether a 5-field cron expression matches the given datetime."""
     parts = cron_str.split()
     if len(parts) != 5: return False
-    fields = [(parts[0], dt.minute), (parts[1], dt.hour), (parts[2], dt.day), (parts[3], dt.month), (parts[4], dt.isoweekday() % 7)]
-    for pattern, value in fields:
+    # (pattern, value, field_max) — max is exclusive upper bound for step ranges
+    fields = [
+        (parts[0], dt.minute, 60),     # minute: 0-59
+        (parts[1], dt.hour, 24),        # hour: 0-23
+        (parts[2], dt.day, 32),         # day: 1-31
+        (parts[3], dt.month, 13),       # month: 1-12
+        (parts[4], dt.isoweekday() % 7, 7),  # weekday: 0-6
+    ]
+    for pattern, value, field_max in fields:
         if pattern == "*": continue
         allowed = set()
         for segment in pattern.split(","):
             if "/" in segment:
                 base, step = segment.split("/"); step = int(step)
                 start = 0 if base == "*" else int(base)
-                allowed.update(range(start, 60, step))
+                allowed.update(range(start, field_max, step))
             elif "-" in segment:
                 lo, hi = segment.split("-"); allowed.update(range(int(lo), int(hi) + 1))
             else:
@@ -330,7 +386,8 @@ class ConfirmView(View):
 class PaginatorView(View):
     def __init__(self, embeds: List[discord.Embed], timeout=180):
         super().__init__(timeout=timeout)
-        self.embeds = embeds; self.current_page = 0
+        self.embeds = embeds if embeds else [discord.Embed(description="No data available.")]
+        self.current_page = 0
 
     @button(label="◀️", style=discord.ButtonStyle.gray)
     async def prev_button(self, interaction: discord.Interaction, btn: Button):
@@ -383,6 +440,8 @@ _cooldowns: dict[str, dict[int, float]] = defaultdict(dict)
 def cooldown(seconds: int):
     """Simple per-user cooldown decorator for hybrid commands."""
     def decorator(func):
+        # Use module-qualified name to prevent cross-cog collisions
+        cooldown_key = f"{func.__module__}.{func.__qualname__}"
         @wraps(func)
         async def wrapper(self_or_ctx, *args, **kwargs):
             ctx = self_or_ctx if isinstance(self_or_ctx, commands.Context) else args[0] if args else kwargs.get("ctx")
@@ -390,12 +449,12 @@ def cooldown(seconds: int):
                 return await func(self_or_ctx, *args, **kwargs)
             uid = ctx.author.id
             now = time.time()
-            last = _cooldowns[func.__name__].get(uid, 0)
+            last = _cooldowns[cooldown_key].get(uid, 0)
             if now - last < seconds:
                 remaining = int(seconds - (now - last))
                 await ctx.send(f"⏳ Cooldown — try again in **{remaining}s**", ephemeral=True)
                 return
-            _cooldowns[func.__name__][uid] = now
+            _cooldowns[cooldown_key][uid] = now
             return await func(self_or_ctx, *args, **kwargs)
         return wrapper
     return decorator

@@ -162,8 +162,8 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
             await interaction.followup.send(msg, ephemeral=True)
         else:
             await interaction.response.send_message(msg, ephemeral=True)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"Could not send error message to user: {e}")
 
 
 @bot.event

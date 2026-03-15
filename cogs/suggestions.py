@@ -2,8 +2,6 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from typing import List
-from datetime import datetime, timezone
 
 from utils import (
     load_data, save_data, utc_now, cooldown, PaginatorView
