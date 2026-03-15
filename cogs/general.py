@@ -107,12 +107,28 @@ class General(commands.Cog):
     @commands.hybrid_command(name="setign")
     @app_commands.describe(ign="Your in-game name")
     async def set_ign(self, ctx: commands.Context, *, ign: str):
-        """Set your in-game name."""
+        """Set your in-game name and update your server nickname."""
         uid = str(ctx.author.id)
+        clean_ign = ign.strip()
         if uid not in user_profiles: user_profiles[uid] = {}
-        user_profiles[uid]["ign"] = ign.strip()
+        user_profiles[uid]["ign"] = clean_ign
         save_data("profiles", user_profiles)
-        await ctx.send(f"✅ In-game name set to **{ign.strip()}**!", ephemeral=True)
+
+        # Try to update the member's server nickname
+        nick_msg = ""
+        try:
+            await ctx.author.edit(nick=clean_ign)
+            nick_msg = f"\n📝 Server nickname changed to **{clean_ign}**"
+        except discord.Forbidden:
+            # Bot lacks permission or user is the server owner (can't change owner nick)
+            if ctx.author.id == ctx.guild.owner_id:
+                nick_msg = "\n⚠️ Can't change the server owner's nickname — Discord doesn't allow it. Change it manually in Server Settings."
+            else:
+                nick_msg = "\n⚠️ I don't have permission to change your nickname. Ask an admin to move my role higher, or change it manually."
+        except discord.HTTPException:
+            nick_msg = "\n⚠️ Couldn't update nickname (Discord error). Your IGN is saved though."
+
+        await ctx.send(f"✅ In-game name set to **{clean_ign}**!{nick_msg}", ephemeral=True)
 
     # --- /leaderboard ---
     @commands.hybrid_command(name="leaderboard", aliases=["lb", "top"])
