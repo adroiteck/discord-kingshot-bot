@@ -1,4 +1,5 @@
 """General cog — profiles, codes, timezones, leaderboard, power tracking."""
+import asyncio
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -224,6 +225,11 @@ class General(commands.Cog):
             embed.add_field(name="Rewards", value=rewards, inline=False)
             embed.set_footer(text=f"Submitted by {ctx.author.display_name}")
             await gift_ch.send(embed=embed)
+
+        # Trigger auto-redemption for all registered players
+        gameapi_cog = self.bot.get_cog("GameAPI")
+        if gameapi_cog:
+            asyncio.create_task(gameapi_cog.auto_redeem_code(code, ctx.guild))
 
     @commands.hybrid_command(name="expirecode")
     @app_commands.describe(code="The gift code to expire")

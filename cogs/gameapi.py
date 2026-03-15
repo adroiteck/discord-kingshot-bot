@@ -250,6 +250,98 @@ class GameAPI(commands.Cog):
             self.auto_redeem_check.start()
 
     # -----------------------------------------------------------------------
+    # AUTO-REDEEM — callable from /addcode or message watcher
+    # -----------------------------------------------------------------------
+    async def auto_redeem_code(self, code: str, guild: discord.Guild):
+        """Redeem a gift code for all registered players. Called by /addcode or message watcher."""
+        code = code.upper()
+        players = registered_players["players"]
+        if not players:
+            log.info(f"Auto-redeem {code}: no players registered")
+            return
+
+        # Skip if already processed or currently processing
+        already_done = any(c["code"] == code for c in code_history["codes"])
+        if already_done or code in self._processing_codes:
+            log.info(f"Auto-redeem {code}: already processed or in progress")
+            return
+
+        self._processing_codes.add(code)
+        log.info(f"Auto-redeem {code}: validating for {len(players)} players...")
+
+        session = await self._get_session()
+
+        # Validate on first player
+        first_fid = next(iter(players.values()))["fid"]
+        test_resp = await api_redeem_code(session, first_fid, code)
+        test_err = test_resp.get("err_code", test_resp.get("code", -1))
+
+        if test_err == 40014:
+            log.info(f"Code {code} is not a valid gift code, skipping")
+            self._processing_codes.discard(code)
+            return
+        if test_err == 40007:
+            log.info(f"Code {code} is expired, skipping")
+            self._processing_codes.discard(code)
+            return
+
+        log.info(f"Code {code} is valid! Redeeming for {len(players)} players...")
+        results = {"success": 0, "already_claimed": 0, "failed": 0}
+        if test_err == 20000 or test_err == 0:
+            results["success"] = 1
+        elif test_err in (40008, 40011):
+            results["already_claimed"] = 1
+        else:
+            results["failed"] = 1
+
+        # Redeem for remaining players
+        remaining = list(players.items())[1:]
+        for uid, player in remaining:
+            fid = player["fid"]
+            try:
+                resp = await api_redeem_code(session, fid, code)
+                err_code = resp.get("err_code", resp.get("code", -1))
+                if err_code == 20000 or err_code == 0:
+                    results["success"] += 1
+                elif err_code in (40008, 40011):
+                    results["already_claimed"] += 1
+                elif err_code == 40014:
+                    break
+                else:
+                    results["failed"] += 1
+            except Exception:
+                results["failed"] += 1
+            await asyncio.sleep(RATE_LIMIT_DELAY)
+
+        # Record in history
+        code_history["codes"].append({
+            "code": code,
+            "submitted_by": "auto",
+            "submitted_at": utc_now().isoformat(),
+            "results": results,
+        })
+        save_data("code_history", code_history)
+
+        # Post results
+        report_ch = discord.utils.get(guild.text_channels, name="gift-codes") if guild else None
+        if report_ch:
+            embed = discord.Embed(
+                title=f"🤖 Auto-Redeemed: `{code}`",
+                description="Gift code automatically redeemed for all registered players!",
+                color=discord.Color.green() if results["success"] > 0 else discord.Color.orange(),
+            )
+            embed.add_field(name="✅ Redeemed", value=str(results["success"]), inline=True)
+            embed.add_field(name="📦 Already Claimed", value=str(results["already_claimed"]), inline=True)
+            embed.add_field(name="❌ Failed", value=str(results["failed"]), inline=True)
+            try:
+                await report_ch.send(embed=embed)
+            except Exception as e:
+                log.warning(f"Could not post auto-redeem results: {e}")
+
+        log.info(f"Auto-redeem complete for {code}: {results}")
+        self._processing_codes.discard(code)
+
+    # -----------------------------------------------------------------------
     # MESSAGE WATCHER — Auto-detect codes from the linked official channel
     # -----------------------------------------------------------------------
     @commands.Cog.listener()
@@ -280,96 +372,9 @@ class GameAPI(commands.Cog):
         if not codes:
             return
 
-        players = registered_players["players"]
-        if not players:
-            log.info(f"Gift code(s) detected {codes} but no players registered")
-            return
-
-        session = await self._get_session()
-
+        log.info(f"Gift code(s) detected from channel watcher: {codes}")
         for code in codes:
-            # Skip if already processed or currently processing
-            already_done = any(c["code"] == code for c in code_history["codes"])
-            if already_done or code in self._processing_codes:
-                continue
-
-            self._processing_codes.add(code)
-            log.info(f"Auto-detected gift code: {code} — validating...")
-
-            # Quick validation: try on the first registered player
-            first_fid = next(iter(players.values()))["fid"]
-            test_resp = await api_redeem_code(session, first_fid, code)
-            test_err = test_resp.get("err_code", test_resp.get("code", -1))
-
-            if test_err == 40014:
-                log.info(f"Code {code} is not a valid gift code, skipping")
-                self._processing_codes.discard(code)
-                continue
-            if test_err == 40007:
-                log.info(f"Code {code} is expired, skipping")
-                self._processing_codes.discard(code)
-                continue
-
-            # Valid code — count the first player's result and redeem for the rest
-            log.info(f"Code {code} is valid! Redeeming for {len(players)} players...")
-
-            results = {"success": 0, "already_claimed": 0, "failed": 0}
-            if test_err == 20000 or test_err == 0:
-                results["success"] = 1
-            elif test_err in (40008, 40011):
-                results["already_claimed"] = 1
-            else:
-                results["failed"] = 1
-
-            # Redeem for remaining players
-            remaining = list(players.items())[1:]
-            for uid, player in remaining:
-                fid = player["fid"]
-                try:
-                    resp = await api_redeem_code(session, fid, code)
-                    err_code = resp.get("err_code", resp.get("code", -1))
-                    if err_code == 20000 or err_code == 0:
-                        results["success"] += 1
-                    elif err_code in (40008, 40011):
-                        results["already_claimed"] += 1
-                    elif err_code == 40014:
-                        break  # code invalidated mid-run
-                    else:
-                        results["failed"] += 1
-                except Exception:
-                    results["failed"] += 1
-                await asyncio.sleep(RATE_LIMIT_DELAY)
-
-            # Record in history
-            code_history["codes"].append({
-                "code": code,
-                "submitted_by": "auto_watcher",
-                "submitted_at": utc_now().isoformat(),
-                "source_channel": str(GIFTCODE_WATCH_CHANNEL),
-                "results": results,
-            })
-            save_data("code_history", code_history)
-
-            # Post results to a bot-accessible channel (gift-codes or the watch channel)
-            guild = message.guild
-            report_ch = discord.utils.get(guild.text_channels, name="gift-codes") if guild else None
-            if report_ch:
-                embed = discord.Embed(
-                    title=f"🤖 Auto-Redeemed: `{code}`",
-                    description="Gift code detected from official channel and automatically redeemed!",
-                    color=discord.Color.green() if results["success"] > 0 else discord.Color.orange(),
-                )
-                embed.add_field(name="✅ Redeemed", value=str(results["success"]), inline=True)
-                embed.add_field(name="📦 Already Claimed", value=str(results["already_claimed"]), inline=True)
-                embed.add_field(name="❌ Failed", value=str(results["failed"]), inline=True)
-                embed.set_footer(text="Codes auto-detected from linked official channel")
-                try:
-                    await report_ch.send(embed=embed)
-                except Exception as e:
-                    log.warning(f"Could not post auto-redeem results: {e}")
-
-            log.info(f"Auto-redeem complete for {code}: {results}")
-            self._processing_codes.discard(code)
+            await self.auto_redeem_code(code, message.guild)
 
     # -----------------------------------------------------------------------
     # /register — Link Discord user to in-game player ID
