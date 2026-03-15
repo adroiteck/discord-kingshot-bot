@@ -453,19 +453,19 @@ EVENT_GUIDES = {
         "name": "Kingdom of Power (KvK)",
         "emoji": "👑",
         "color": 0xFFD700,
-        "summary": "Cross-kingdom mega event. Compete for 'High King' title. Kingdom must be 70+ days old.",
+        "summary": "Cross-kingdom mega event with 4 phases: Matchmaking (48h) → Prep (5d) → Battle (12h) → Field Triage. Kingdom must be 70+ days old.",
         "heroes": "**Attack:** Amadeus + Hilde + Marlin\n**Garrison:** Zoe + Hilde + Saul\n**Joiners:** Chenko + Amane + Saul + Fahd",
-        "troops": "**Attack:** 50% Infantry / 20% Cav / 30% Archers\n**If enemy is infantry-only:** 30% Inf / 20% Cav / 50% Archers",
-        "tips": "• Hoard speed-ups, Truegold, gems WEEKS in advance\n• Time upgrades with kingdom-wide buffs for 2x points\n• TC upgrades and T8+ troop training = best point investments",
+        "troops": "**Attack:** 50% Infantry / 20% Cav / 30% Archers\n**Defense/Garrison:** 60% Infantry / 20% Cav / 20% Archers",
+        "tips": "• Phase 1 (48h): Matchmaking — kingdoms are assigned opponents\n• Phase 2 (5d): Prep — build, research, train troops\n• Phase 3 (12h): Battle Window (10:00-22:00 UTC) — intense PvP!\n• Phase 4: Field Triage — healing and cleanup\n• Points from: building, training, research, PvP kills, territory control\n• Hoard speed-ups, Truegold, gems WEEKS in advance",
     },
     "bear": {
         "name": "Bear Hunt",
         "emoji": "🐻",
         "color": 0x8B4513,
         "summary": "Alliance rally event at the Pitfall building. Bear deals NO return damage — go full offense!",
-        "heroes": "**Host:** Amadeus, Chenko, or Yeonwoo\n**Joiners:** Chenko (25% Lethality) > Amane > Yeonwoo",
-        "troops": "**90% Archers** — Bear can't fight back, max DPS!\n10% Infantry/Cavalry for hero buff triggers",
-        "tips": "• Lethality is the #1 damage stat for Bear Hunt\n• Position towns close to Pitfall for faster rallies\n• Upgrade Pitfall to Level 5 for +5% Attack per level to ALL members",
+        "heroes": "**Host (Gen 4+):** Amadeus + Petra + Rosa\n**Joiner S-tier:** Vivian (new!) > Chenko > Amane\n**Lethality bonus:** 25% from each hero",
+        "troops": "**Host:** 1% Infantry / 10% Cavalry / 89% Archers\n**Joiner:** 0% Inf / 20% Cav / 80% Archer",
+        "tips": "• Lethality is the #1 damage stat for Bear Hunt\n• Position towns close to Pitfall for faster rallies\n• Upgrade Pitfall to Level 5 for +5% Attack per level to ALL members\n• Use the Formation button to preset offensive composition",
     },
     "merchant": {
         "name": "Merchant Empire",
@@ -500,17 +500,17 @@ EVENT_GUIDES = {
         "color": 0x9400D3,
         "summary": "Permanent weekly dungeon. 5 attempts/day, 6 rotating dungeons. Breakthroughs are permanent!",
         "heroes": "Move strongest cavalry hero to Team 2 for split damage coverage.",
-        "troops": "50-60% Infantry / 10-20% Cavalry / 20-30% Archers",
-        "tips": "• MASSIVE RNG — same battle can win or lose, always use all 5 attempts\n• Buy Mithril from shop first (rarest, most valuable)\n• Every breakthrough is permanent — keep pushing!",
+        "troops": "**Per Dungeon:**\n• Tomb of Shadows: 30% Inf / 20% Cav / 50% Archer\n• Frozen Abyss: 50% Inf / 10% Cav / 40% Archer\n• Inferno Core: 40% Inf / 30% Cav / 30% Archer\n• Storm Spire: 20% Inf / 40% Cav / 40% Archer\n• Verdant Maze: 30% Inf / 30% Cav / 40% Archer\n• Crystal Cavern: 50% Inf / 20% Cav / 30% Archer",
+        "tips": "• MASSIVE RNG — same battle can win or lose, always use all 5 attempts\n• Buy Mithril from shop first (rarest, most valuable)\n• Every breakthrough is permanent — keep pushing!\n• Adapt composition based on dungeon type",
     },
     "governor": {
         "name": "Strongest Governor",
         "emoji": "🏆",
         "color": 0xB8860B,
         "summary": "Monthly 7-day cross-kingdom event. Different task focus each day. Requires months of prep!",
-        "heroes": "Save Hero Shards for Hero Development days (Day 2, 3, 7).",
-        "troops": "Train highest tier on Combat Training days (Day 4, 6).",
-        "tips": "• Day 1: Save Truegold for construction (2,000 pts each)\n• Day 2,3,7: Mythic Hero Shard ascension = 3,040 pts\n• Start saving resources MONTHS in advance\n• Top 2,000 governors get cross-kingdom rewards",
+        "heroes": "**Day 1:** N/A\n**Day 2 & 7:** Hero Development — use Hero Shards & Forgehammers\n**Day 3 & 5:** Basic Skills Up — use skill books & research scrolls\n**Day 4 & 6:** Combat Training — train troops",
+        "troops": "**Daily Schedule:**\n• Day 1: City Construction (Truegold, speedups, Governor Gear Charms)\n• Day 2: Hero Development (Mithril, Hero Shards, Forgehammers)\n• Day 3: Basic Skills Up (Skill books, research scrolls)\n• Day 4: Combat Training (Highest-tier troops)\n• Day 5: Basic Skills Up\n• Day 6: Combat Training\n• Day 7: Hero Development",
+        "tips": "• Start hoarding resources MONTHS in advance\n• Pre-queue Day 1 building upgrades to finish on day reset\n• Save all Mythic Hero Shards for Days 2 & 7 (3,040 pts each)\n• Batch troop training for Days 4 & 6\n• Top 2,000 governors get cross-kingdom rewards\n• Track leaderboard position — don't burn resources early",
     },
     "mobilization": {
         "name": "Alliance Mobilization",
@@ -520,6 +520,69 @@ EVENT_GUIDES = {
         "heroes": "N/A — mission-based, not combat.",
         "troops": "N/A — mission-based.",
         "tips": "• Keep soldier training & beast hunting missions\n• Refresh low-value acceleration tasks\n• Use boosted slots (1.2x-2.0x) on highest-value tasks\n• Treat as background event — most missions mirror normal play",
+    },
+    "tri_alliance": {
+        "name": "Tri-Alliance Clash",
+        "emoji": "⚡",
+        "color": 0xFF6347,
+        "summary": "3 alliances compete in PvP territory control. Coordinate with leadership!",
+        "heroes": "**Attack:** Amadeus + Hilde + Marlin\n**Defense:** Zoe + Hilde + Saul",
+        "troops": "**Attack:** 50% Infantry / 20% Cav / 30% Archers\n**Defense:** 60% Infantry / 20% Cav / 20% Archers",
+        "tips": "• Territory control wins the day — map positioning is critical\n• Spread forces across multiple fronts to deny enemy resources\n• Communicate rally times with leadership for maximum impact",
+    },
+    "eternitys_reach": {
+        "name": "Eternity's Reach",
+        "emoji": "🌌",
+        "color": 0x4B0082,
+        "summary": "Solo progression dungeon with escalating difficulty and milestone rewards.",
+        "heroes": "Use your strongest heroes for higher tier runs.",
+        "troops": "Full march composition — adjust based on dungeon difficulty.",
+        "tips": "• Progress as far as possible for milestone rewards\n• Each floor increases difficulty and rewards\n• Weak formations fail early — don't skip upgrades\n• Ranking rewards go to top performers across all kingdoms",
+    },
+    "molten_fort": {
+        "name": "Molten Fort",
+        "emoji": "🔥",
+        "color": 0xFF4500,
+        "summary": "Alliance siege event — attack/defend fortresses for points and loot.",
+        "heroes": "**Attack:** Amadeus + Hilde + Marlin\n**Defense:** Zoe + Hilde + Saul",
+        "troops": "**Attack:** 50% Infantry / 20% Cav / 30% Archers\n**Defense:** 60% Infantry / 20% Cav / 20% Archers",
+        "tips": "• Multiple fortresses available — concentrate forces on weak targets\n• Defend from counter-attacks — garrison troops wisely\n• Coordinate with alliance on fortress assignments\n• Capture and hold as long as possible for point accumulation",
+    },
+    "all_out": {
+        "name": "All Out (Kill Event)",
+        "emoji": "💀",
+        "color": 0x000000,
+        "summary": "Open PvP event — attack other players or shield up. Max rewards for participation milestones.",
+        "heroes": "Your strongest combat marches.",
+        "troops": "Full combat composition for attacking.",
+        "tips": "• ⚠️ Shield UP if not participating!\n• Target lower Town Centers for easier wins\n• Hit milestone benchmarks first, then decide if you continue\n• Pop Peace Shield immediately after milestones if you want safety\n• Coordinate with allies on target priority",
+    },
+    "windward_voyage": {
+        "name": "Windward Voyage",
+        "emoji": "⛵",
+        "color": 0x1E90FF,
+        "summary": "Sailing/exploration event with resource discovery and voyage milestones.",
+        "heroes": "N/A — sailing event, not combat-focused.",
+        "troops": "N/A — sailing event.",
+        "tips": "• Discover new locations for bonus resources\n• Plan sailing routes efficiently to hit all hotspots\n• Complete voyage milestones for chest rewards\n• Some events offer trading opportunities with other players",
+    },
+    "suppress_mode": {
+        "name": "Suppress Mode",
+        "emoji": "🛡️",
+        "color": 0x228B22,
+        "summary": "PvE wave defense event — survive increasingly difficult enemy waves.",
+        "heroes": "Build defensive-oriented hero lineups.",
+        "troops": "**Defense-heavy:** 60% Infantry / 20% Cav / 20% Archers",
+        "tips": "• Each wave gets progressively harder — don't under-prepare\n• Use garrison positions for additional defense layers\n• Build towers/traps if available in-game\n• Rank higher by surviving more waves or taking less damage",
+    },
+    "vikings_vengeance": {
+        "name": "Vikings' Vengeance",
+        "emoji": "🪓",
+        "color": 0x8B0000,
+        "summary": "Themed PvP raid event — raid opponent resources and defend yours.",
+        "heroes": "**Attack:** Amadeus + Hilde + Marlin\n**Defense:** Zoe + Hilde + Saul",
+        "troops": "**Attack:** 50% Infantry / 20% Cav / 30% Archers\n**Defense:** 60% Infantry / 20% Cav / 20% Archers",
+        "tips": "• Target unshielded high-resource cities\n• Defend key resource buildings with garrison troops\n• Coordinate raid schedules with alliance members\n• Track raided status and raid them back if possible",
     },
 }
 
@@ -542,6 +605,10 @@ DEFAULT_TIPS = [
     "💡 Use cheap decorations on Oasis Island to guide workers toward treasure chests.",
     "💡 In Alliance Brawl, Day 6 is worth 4 horns — it can decide the entire event!",
     "💡 Lethality is the #1 damage stat for Bear Hunt — prioritize it over raw Attack.",
+    "💡 Use /suggest to share your best strategies with the alliance!",
+    "💡 Submit your troop compositions with /reportcomp to help the alliance optimize for events.",
+    "💡 View community troop stats with /troopstats — learn what works for other players.",
+    "💡 Check /viewsuggestions to see community-tested strategies for your event.",
 ]
 
 
@@ -2091,6 +2158,168 @@ async def remind_me(ctx: commands.Context):
 
     reminder_optins["users"] = users
     save_data("reminder_optins", reminder_optins)
+
+
+# =========================================================================
+# User Feedback & Crowdsourcing Commands
+# =========================================================================
+user_suggestions = load_data("user_suggestions", {"suggestions": []})
+
+@bot.hybrid_command(name="suggest", description="Submit a strategy tip or troop composition for an event")
+@app_commands.describe(event="Event name (e.g., bear, kvk, swordland)", suggestion="Your strategy tip or troop comp")
+async def suggest(ctx, event: str, *, suggestion: str):
+    """Submit a strategy tip or troop composition."""
+    entry = {
+        "user_id": ctx.author.id,
+        "user_name": str(ctx.author),
+        "event": event.lower(),
+        "suggestion": suggestion,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "votes": 0,
+        "status": "pending"
+    }
+    user_suggestions["suggestions"].append(entry)
+    save_data("user_suggestions", user_suggestions)
+    embed = discord.Embed(
+        title="✅ Suggestion Submitted!",
+        description=f"**Event:** {event}\n**Tip:** {suggestion}\n\nLeadership will review your suggestion. Thanks for contributing!",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed, ephemeral=True)
+
+@bot.hybrid_command(name="viewsuggestions", description="View community-submitted strategies for an event")
+@app_commands.describe(event="Event name to view suggestions for")
+async def viewsuggestions(ctx, event: str):
+    """View community suggestions for an event."""
+    event_lower = event.lower()
+    filtered = [s for s in user_suggestions["suggestions"] if s["event"] == event_lower and s.get("status") != "rejected"]
+    if not filtered:
+        await ctx.send(embed=discord.Embed(description=f"No suggestions yet for **{event}**. Use `/suggest` to add one!", color=discord.Color.orange()), ephemeral=True)
+        return
+
+    pages = []
+    per_page = 5
+    for i in range(0, len(filtered), per_page):
+        chunk = filtered[i:i+per_page]
+        desc = ""
+        for j, s in enumerate(chunk, start=i+1):
+            status_icon = "✅" if s.get("status") == "approved" else "⏳"
+            desc += f"{status_icon} **#{j}** by <@{s['user_id']}>\n{s['suggestion']}\n👍 {s.get('votes', 0)} votes\n\n"
+        embed = discord.Embed(
+            title=f"📋 Community Strategies — {event.title()}",
+            description=desc,
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text=f"Page {i//per_page + 1}/{(len(filtered)-1)//per_page + 1} | Use /suggest to add your own")
+        pages.append(embed)
+
+    if len(pages) == 1:
+        await ctx.send(embed=pages[0], ephemeral=True)
+    else:
+        view = PaginatorView(pages)
+        await ctx.send(embed=pages[0], view=view, ephemeral=True)
+
+@bot.hybrid_command(name="reportcomp", description="Report your troop composition results for an event")
+@app_commands.describe(
+    event="Event name (e.g., bear, kvk, mystic)",
+    infantry="Infantry percentage (0-100)",
+    cavalry="Cavalry percentage (0-100)",
+    archers="Archer percentage (0-100)",
+    result="How did it go? (e.g., 'Great damage, top 3 in alliance')"
+)
+async def reportcomp(ctx, event: str, infantry: int, cavalry: int, archers: int, *, result: str):
+    """Report your troop composition and results for an event."""
+    if infantry + cavalry + archers != 100:
+        await ctx.send(embed=discord.Embed(description="❌ Troop percentages must add up to 100!", color=discord.Color.red()), ephemeral=True)
+        return
+
+    entry = {
+        "user_id": ctx.author.id,
+        "user_name": str(ctx.author),
+        "event": event.lower(),
+        "infantry": infantry,
+        "cavalry": cavalry,
+        "archers": archers,
+        "result": result,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+    comps = load_data("troop_reports", {"reports": []})
+    comps["reports"].append(entry)
+    save_data("troop_reports", comps)
+
+    embed = discord.Embed(
+        title="🪖 Troop Report Submitted!",
+        description=(
+            f"**Event:** {event}\n"
+            f"**Composition:** {infantry}% Inf / {cavalry}% Cav / {archers}% Arch\n"
+            f"**Result:** {result}\n\n"
+            "Your report helps the alliance find optimal compositions!"
+        ),
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed, ephemeral=True)
+
+@bot.hybrid_command(name="troopstats", description="View aggregated troop composition reports for an event")
+@app_commands.describe(event="Event name to view troop stats for")
+async def troopstats(ctx, event: str):
+    """View aggregated troop composition data from alliance members."""
+    comps = load_data("troop_reports", {"reports": []})
+    event_lower = event.lower()
+    filtered = [r for r in comps["reports"] if r["event"] == event_lower]
+
+    if not filtered:
+        await ctx.send(embed=discord.Embed(description=f"No troop reports for **{event}** yet. Use `/reportcomp` to submit yours!", color=discord.Color.orange()), ephemeral=True)
+        return
+
+    avg_inf = sum(r["infantry"] for r in filtered) / len(filtered)
+    avg_cav = sum(r["cavalry"] for r in filtered) / len(filtered)
+    avg_arch = sum(r["archers"] for r in filtered) / len(filtered)
+
+    recent = filtered[-5:]  # Last 5 reports
+    recent_text = ""
+    for r in reversed(recent):
+        recent_text += f"<@{r['user_id']}>: {r['infantry']}%/{r['cavalry']}%/{r['archers']}% — {r['result']}\n"
+
+    embed = discord.Embed(
+        title=f"📊 Troop Stats — {event.title()}",
+        description=f"Based on **{len(filtered)}** reports from alliance members.",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="📈 Average Composition",
+        value=f"Infantry: {avg_inf:.0f}%\nCavalry: {avg_cav:.0f}%\nArchers: {avg_arch:.0f}%",
+        inline=True
+    )
+    embed.add_field(name="🕐 Recent Reports", value=recent_text or "None", inline=False)
+    embed.set_footer(text="Use /reportcomp to add your results!")
+    await ctx.send(embed=embed, ephemeral=True)
+
+@bot.hybrid_command(name="approvesuggestion", description="[Leadership] Approve or reject a community suggestion")
+@app_commands.describe(index="Suggestion number (from /viewsuggestions)", action="approve or reject")
+@app_commands.default_permissions(manage_guild=True)
+async def approvesuggestion(ctx, index: int, action: str):
+    """Approve or reject a community suggestion."""
+    if action.lower() not in ("approve", "reject"):
+        await ctx.send(embed=discord.Embed(description="❌ Action must be 'approve' or 'reject'", color=discord.Color.red()), ephemeral=True)
+        return
+
+    if index < 1 or index > len(user_suggestions["suggestions"]):
+        await ctx.send(embed=discord.Embed(description=f"❌ Invalid index. Use /viewsuggestions to see valid numbers.", color=discord.Color.red()), ephemeral=True)
+        return
+
+    suggestion = user_suggestions["suggestions"][index - 1]
+    suggestion["status"] = "approved" if action.lower() == "approve" else "rejected"
+    suggestion["reviewed_by"] = str(ctx.author)
+    save_data("user_suggestions", user_suggestions)
+
+    status_text = "✅ Approved" if action.lower() == "approve" else "❌ Rejected"
+    embed = discord.Embed(
+        title=f"{status_text} Suggestion #{index}",
+        description=f"**Event:** {suggestion['event']}\n**Tip:** {suggestion['suggestion']}\n**By:** {suggestion['user_name']}",
+        color=discord.Color.green() if action.lower() == "approve" else discord.Color.red()
+    )
+    await ctx.send(embed=embed, ephemeral=True)
 
 
 # =========================================================================

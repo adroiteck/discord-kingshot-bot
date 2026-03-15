@@ -60,9 +60,17 @@
       "reminder": "Hero Rally Round 2 is active! Another chance to recruit and upgrade heroes.\n\n🎯 **Strategy:**\n• Same as Round 1 — use shards on heroes near star-level breakpoints\n• If you already spent most shards in Round 1, focus on Skill Book upgrades for points\n• Check the event shop for discounted hero items\n\n📦 **Prep:**\n• Save any remaining shards from Round 1\n• Complete daily quests that reward Hero XP and shards"
     },
     {
+      "name": "Kingdom of Power (KvK)",
+      "emoji": "👑",
+      "cycle_day_start": 4,
+      "duration_days": 7,
+      "type": "kingdom",
+      "reminder": "Kingdom of Power (KvK) begins! 4-phase cross-kingdom event.\n\n📋 **KvK Phases:**\n• Phase 1: Matchmaking (48h) — kingdoms are assigned opponents\n• Phase 2: Preparation (5 days) — build, research, train troops\n• Phase 3: Battle Window (12h, 10:00-22:00 UTC) — intense PvP combat!\n• Phase 4: Field Triage — healing and cleanup phase\n\n🎯 **Strategy:**\n• Points from: Building, Research, Troop Training, PvP Kills, Territory Control\n• **Attack Formation:** 50% Infantry / 20% Cavalry / 30% Archers\n• **Defense Formation:** 60% Infantry / 20% Cavalry / 20% Archers\n• **Best Heroes - Attack:** Amadeus + Hilde + Marlin\n• **Best Heroes - Defense:** Zoe + Hilde + Saul\n• Time TC and troop training upgrades with kingdom-wide buffs for 2x points\n• Reserve your strongest marches for Phase 3 Battle Window\n\n📦 **Prep:**\n• Kingdom must be 70+ days old\n• Hoard speedups, Truegold, gems WEEKS in advance\n• Pre-queue building/research to finish during KvK (especially Phase 2)\n• Batch troop training to maximize during event window\n• Coordinate with leadership on attack strategy"
+    },
+    {
       "name": "Alliance Championship",
       "emoji": "🏆",
-      "cycle_day_start": 4,
+      "cycle_day_start": 11,
       "duration_days": 4,
       "type": "alliance",
       "reminder": "Alliance Championship starts today! 6 alliances, 5 rounds of battle.\n\n🎯 **Strategy:**\n• **Formation:** 50% Infantry (tanks), 20% Lancers (tactics), 30% Archers (damage)\n• **Lane Roles:** Strongest players on Main lanes, mid-tier on Secondary, low-power on Sacrifice lanes to slow enemies\n• Round 1: Spread strong members across all lanes to scout enemy placements\n• Rounds 2-5: Study battle reports and counter enemy patterns with surprise lane switches\n• Activate pet skills and buffs BEFORE registering — they stay active for the entire event\n\n📦 **Prep:**\n• R4/R5 must register alliance during the 2-day registration window\n• Only top 20 players by combat power count — ensure your strongest are registered\n• Assign lane roles in advance and communicate via alliance chat\n• Pre-set troop formations (don't scramble during prep phase)"
@@ -102,7 +110,7 @@
     {
       "name": "Champagne Fair",
       "emoji": "🍾",
-      "cycle_day_start": 11,
+      "cycle_day_start": 16,
       "duration_days": 3,
       "type": "solo",
       "reminder": "Champagne Fair is active! Trade excess hero shards and skill books for Fair Vouchers.\n\n🎯 **Strategy:**\n• Trade duplicate Rare/Epic shards you don't need — keep Mythic shards\n• Use Fair Vouchers to buy: Widgets, Forgehammers, Governor Gear materials\n• Prioritize items you can't easily farm elsewhere\n• Check the shop daily — stock refreshes and some items are limited\n\n📦 **Prep:**\n• Identify which hero shards are safe to trade (heroes you won't build)\n• Save duplicate skill books for trading\n• Make a wishlist of items you want from the Fair shop"
@@ -110,7 +118,7 @@
     {
       "name": "Golden Glaives",
       "emoji": "✨",
-      "cycle_day_start": 12,
+      "cycle_day_start": 15,
       "duration_days": 2,
       "type": "solo",
       "reminder": "Golden Glaives is active! Complete Intel Missions to collect Dim Goldstones.\n\n🎯 **Strategy:**\n• Regular Intel Missions (beast hunting, rescuing refugees) = 1 Dim Goldstone each\n• Hunting Golden Glaives on the map = 10 Dim Goldstones each — always prioritize these!\n• Trade Goldstones for collection rewards on the event page\n• This runs during Strongest Governor prep phase — stack your activities\n\n📦 **Prep:**\n• Save Intel Missions if possible\n• Keep stamina available for Golden Glaive hunting on the map\n• Check the rewards page to see what Goldstone thresholds give the best loot"
@@ -121,7 +129,7 @@
       "cycle_day_start": 14,
       "duration_days": 7,
       "type": "competitive",
-      "reminder": "Strongest Governor starts today! The most prestigious 7-day competition.\n\n📋 **Daily Schedule:**\nDay 1: City Construction\nDay 2: Hero Development\nDay 3: Basic Skills Up\nDay 4: Combat Training\nDay 5: Basic Skills Up\nDay 6: Combat Training\nDay 7: Hero Development\n⏰ Daily reset at 00:00 UTC\n\n🎯 **Strategy:**\n• Day 1 (Construction): Use Truegold and speedups on building/research upgrades. Governor Gear Charms count too\n• Day 2 & 7 (Hero Dev): Use Mithril, Hero Shards, and Forgehammers. Time your biggest upgrades for these days\n• Day 3 & 5 (Skills): Spend skill books and research scrolls\n• Day 4 & 6 (Combat): Train highest-tier troops possible. Use Mithril and Hero Gear Forgehammers\n• Cross-Kingdom Rankings (top 2,000) give the best rewards — track your position\n\n📦 **Prep:**\n• Start hoarding speedups, Truegold, Mithril, and Hero Shards WEEKS in advance\n• Pre-queue building upgrades to finish on Day 1\n• Save ALL hero shards and skill books for Days 2, 3, 5, 7\n• Batch troop training for Days 4 & 6\n• Check leaderboard and pace yourself — don't burn resources early if you can't maintain rank"
+      "reminder": "Strongest Governor starts today! The most prestigious 7-day competition.\n\n📋 **Official Daily Schedule:**\n• Day 1: City Construction (Truegold, speedups, Governor Gear Charms)\n• Day 2: Hero Development (Mithril, Hero Shards, Forgehammers)\n• Day 3: Basic Skills Up (Skill books, research scrolls)\n• Day 4: Combat Training (Highest-tier troops)\n• Day 5: Basic Skills Up (Skill books, research scrolls)\n• Day 6: Combat Training (Highest-tier troops)\n• Day 7: Hero Development (Mithril, Hero Shards, Forgehammers)\n⏰ Daily reset at 00:00 UTC\n\n🎯 **Strategy:**\n• Day 1: Save Truegold for construction (2,000 pts each). Pre-queue upgrades to finish on reset\n• Day 2 & 7: Use Mythic Hero Shards for ascension (3,040 pts each) — these are your biggest point opportunities\n• Day 3 & 5: Spend skill books and research scrolls — reliable steady points\n• Day 4 & 6: Train T8+ troops in bulk — batch them to maximize efficiency\n• Cross-Kingdom Rankings (top 2,000) give the best rewards — track your position and pace yourself\n\n📦 **Prep:**\n• Start hoarding speedups, Truegold, Mithril, and Hero Shards WEEKS or MONTHS in advance\n• Pre-queue building upgrades (Day 1) and research (Days 3, 5)\n• Save ALL Mythic hero shards for Days 2, 3, 5, 7 — don't spend during off-event times\n• Batch troop training for Days 4 & 6 with precise timing\n• Check leaderboard regularly — don't burn resources early if you can't maintain rank\n• Plan your strategy by ROI: Bear Hunt > Strongest Governor > Alliance Brawl > KvK"
     },
     {
       "name": "Merchant Empire",
@@ -146,7 +154,7 @@
       "duration_days": 1,
       "type": "alliance",
       "recurring_every_days": 2,
-      "reminder": "Bear Hunt (Pitfall) is available! The bear deals NO return damage — go full offense!\n\n🎯 **Strategy:**\n• **Formation:** 10% Infantry, 10% Cavalry, 80% Archers (max damage, zero defense needed)\n• **Best joiner heroes:** Amadeus, Chenko, Yanu — each gives 25% lethality in captain slot\n• R4/R5: Check every joiner's heroes and troops before launching — remove wrong bonuses\n• Move alliance cities as close to Pitfall as possible for faster rally return times\n• Last 5–7 minutes: ALL members launch their own rally for extra returning-troop hits\n\n📦 **Prep:**\n• Upgrade Pitfall using Hunting Arrows (from beast hunting) — up to Lvl 5 (+5% ATK/level, 1,900 arrows to max)\n• Pre-set an offensive-only march preset\n• Rally leaders: start when most members are online\n• Collect Forge Hammers from Bear Hunt rewards for Armament Competition"
+      "reminder": "Bear Hunt (Pitfall) is available! The bear deals NO return damage — go full offense!\n\n🎯 **Strategy:**\n• **Host (Gen 4+):** Amadeus + Petra + Rosa for optimal Gen 4+ performance\n• **Host Formation:** 1% Infantry / 10% Cavalry / 89% Archers (max damage)\n• **Joiner Formation:** 0% Infantry / 20% Cavalry / 80% Archers\n• **Best joiner heroes (S-tier):** Vivian (new!) > Chenko > Amane — each gives 25% lethality bonus\n• R4/R5: Check every joiner's heroes and troops before launching — remove wrong bonuses\n• Move alliance cities as close to Pitfall as possible for faster rally return times\n• Last 5–7 minutes: ALL members launch their own rally for extra returning-troop hits\n\n📦 **Prep:**\n• Upgrade Pitfall using Hunting Arrows (from beast hunting) — up to Lvl 5 (+5% ATK/level, 1,900 arrows to max)\n• Pre-set optimal offensive march presets for Host and Joiner roles\n• Rally leaders: verify your march composition meets Gen 4+ standards\n• Collect Forge Hammers from Bear Hunt rewards for Armament Competition\n• Focus on lethality as the primary damage stat"
     },
     {
       "name": "Sanctuary Battle",
