@@ -14,8 +14,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY bot.py .
+COPY utils.py .
 COPY config.json .
 COPY event_cycle.json .
+
+# Copy cog modules and data configs
+COPY cogs/ cogs/
+COPY data/heroes.json data/heroes.json
+COPY data/formations.json data/formations.json
 
 # Create data directory for persistent storage
 # OKD runs with random UID - ensure all files are group-readable/executable
