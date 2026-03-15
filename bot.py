@@ -96,10 +96,9 @@ async def on_ready():
             cog.start_tasks()
             log.info(f"{cog_name} background tasks started")
 
-    # Sync slash commands to guild
+    # Sync slash commands to guild (no copy_global_to — prevents duplicates)
     try:
         guild_obj = discord.Object(id=int(config.get("guild_id", "0")))
-        bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
         log.info(f"Synced {len(synced)} slash command(s) to guild {config.get('guild_id')}")
     except Exception as e:
@@ -139,6 +138,51 @@ async def on_member_join(member: discord.Member):
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await welcome_ch.send(embed=embed)
+
+
+# ---------------------------------------------------------------------------
+# Global error handlers
+# ---------------------------------------------------------------------------
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    """Handle slash command errors globally."""
+    if isinstance(error, discord.app_commands.MissingPermissions):
+        msg = "❌ You don't have permission to use this command."
+    elif isinstance(error, discord.app_commands.MissingAnyRole):
+        msg = "❌ You need a leadership role to use this command."
+    elif isinstance(error, discord.app_commands.CommandOnCooldown):
+        msg = f"⏳ Command on cooldown — try again in **{int(error.retry_after)}s**."
+    elif isinstance(error, discord.app_commands.CommandNotFound):
+        msg = "❌ Command not found."
+    else:
+        log.error(f"Slash command error in /{interaction.command.name if interaction.command else '?'}: {error}", exc_info=error)
+        msg = "⚠️ Something went wrong. Please try again later."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
+    except Exception:
+        pass
+
+
+@bot.event
+async def on_command_error(ctx: commands.Context, error: commands.CommandError):
+    """Handle text command errors globally."""
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ You don't have permission.", ephemeral=True)
+    elif isinstance(error, commands.MissingAnyRole):
+        await ctx.send("❌ You need a leadership role.", ephemeral=True)
+    elif isinstance(error, commands.CommandOnCooldown):
+        await ctx.send(f"⏳ Cooldown — try in **{int(error.retry_after)}s**.", ephemeral=True)
+    elif isinstance(error, commands.CommandNotFound):
+        pass  # Ignore unknown text commands silently
+    else:
+        log.error(f"Command error in {ctx.command}: {error}", exc_info=error)
+        try:
+            await ctx.send("⚠️ Something went wrong. Please try again later.", ephemeral=True)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

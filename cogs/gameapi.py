@@ -1,4 +1,4 @@
-"""Game API cog — Kingshot gift code redemption, player lookup, auto-redeem from linked channel."""
+"""Game API cog — Kingshot gift code redemption, player lookup, auto-redeem, wiki scraper."""
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -8,6 +8,7 @@ import time
 import logging
 import asyncio
 import re
+import subprocess
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -85,6 +86,30 @@ registered_players = load_data("registered_players", {"players": {}})
 code_history = load_data("code_history", {"codes": []})
 auto_redeem_codes = load_data("auto_redeem_codes", {"pending": [], "completed": []})
 gift_codes = load_data("gift_codes", {"codes": []})
+
+
+# Wiki scraper config
+WIKI_CODES_URL = "https://kingshotwiki.com/sneak-peek/"
+WIKI_CODE_PATTERN = re.compile(r'Gift\s+Code\s*:\s*[`"]?([A-Za-z0-9]{4,30})[`"]?', re.IGNORECASE)
+WIKI_EXPIRY_PATTERN = re.compile(r'(?:Expir(?:es?|ation|y)|Valid\s+(?:until|through|till))\s*[:\-–]?\s*(\w+\s+\d{1,2},?\s*\d{4})', re.IGNORECASE)
+
+
+def _mark_code_expired(code: str):
+    """Mark a gift code as expired in the gift_codes store."""
+    code = code.upper()
+    for c in gift_codes.get("codes", []):
+        if c["code"].upper() == code:
+            c["expired"] = True
+            c["expired_at"] = utc_now().isoformat()
+            save_data("gift_codes", gift_codes)
+            log.info(f"Marked gift code {code} as expired")
+            return
+    # If code isn't in the list, add it as expired
+    gift_codes.setdefault("codes", []).append({
+        "code": code, "expired": True,
+        "expired_at": utc_now().isoformat(), "source": "api_detection"
+    })
+    save_data("gift_codes", gift_codes)
 
 
 # ---------------------------------------------------------------------------
@@ -244,11 +269,14 @@ class GameAPI(commands.Cog):
         if self._session and not self._session.closed:
             asyncio.create_task(self._session.close())
         self.auto_redeem_check.cancel()
+        self.wiki_code_scraper.cancel()
 
     def start_tasks(self):
         """Start background tasks (called from on_ready)."""
         if not self.auto_redeem_check.is_running():
             self.auto_redeem_check.start()
+        if not self.wiki_code_scraper.is_running():
+            self.wiki_code_scraper.start()
 
     # -----------------------------------------------------------------------
     # AUTO-REDEEM — callable from /addcode or message watcher
@@ -282,7 +310,8 @@ class GameAPI(commands.Cog):
             self._processing_codes.discard(code)
             return
         if test_err == 40007:
-            log.info(f"Code {code} is expired, skipping")
+            log.info(f"Code {code} is expired, auto-marking as expired")
+            _mark_code_expired(code)
             self._processing_codes.discard(code)
             return
 
@@ -796,6 +825,151 @@ class GameAPI(commands.Cog):
     @auto_redeem_check.before_loop
     async def before_auto_redeem(self):
         await self.bot.wait_until_ready()
+
+    # -----------------------------------------------------------------------
+    # WIKI SCRAPER — Monitor kingshotwiki.com for new gift codes
+    # -----------------------------------------------------------------------
+    @tasks.loop(hours=1)
+    async def wiki_code_scraper(self):
+        """Scrape kingshotwiki.com for new gift codes and auto-redeem them."""
+        try:
+            # Use curl to avoid Cloudflare blocking (aiohttp gets 1010 errors)
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: subprocess.run(
+                    ["curl", "-s", "-L", "--max-time", "30",
+                     "-H", "User-Agent: Mozilla/5.0 (compatible; KingshotBot/1.0)",
+                     WIKI_CODES_URL],
+                    capture_output=True, text=True, timeout=45
+                )
+            )
+            if result.returncode != 0 or not result.stdout:
+                log.warning(f"Wiki scraper: curl failed (rc={result.returncode})")
+                return
+
+            html = result.stdout
+
+            # Extract gift codes from the page
+            found_codes = set()
+            for m in WIKI_CODE_PATTERN.finditer(html):
+                candidate = m.group(1).upper()
+                if candidate.lower() not in CODE_EXCLUDE and len(candidate) >= 4:
+                    found_codes.add(candidate)
+
+            # Also look for inline code blocks with gift code patterns
+            inline_codes = re.findall(r'<code>([A-Za-z0-9]{6,30})</code>', html)
+            for c in inline_codes:
+                cu = c.upper()
+                if cu.lower() not in CODE_EXCLUDE and _is_valid_candidate(c):
+                    found_codes.add(cu)
+
+            if not found_codes:
+                log.debug("Wiki scraper: no codes found on page")
+                return
+
+            # Check which codes are new (not already in gift_codes or code_history)
+            known_codes = {c["code"].upper() for c in gift_codes.get("codes", [])}
+            history_codes = {c["code"].upper() for c in code_history.get("codes", [])}
+            new_codes = found_codes - known_codes - history_codes
+
+            if not new_codes:
+                log.debug(f"Wiki scraper: {len(found_codes)} codes found, all already known")
+                return
+
+            log.info(f"Wiki scraper: found {len(new_codes)} new code(s): {new_codes}")
+
+            # Try to extract expiry dates for context
+            expiry_dates = {}
+            for m in WIKI_EXPIRY_PATTERN.finditer(html):
+                try:
+                    date_str = m.group(1).strip()
+                    # Try common date formats
+                    for fmt in ("%B %d, %Y", "%B %d %Y", "%b %d, %Y", "%b %d %Y"):
+                        try:
+                            expiry_dates["_latest"] = datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+                            break
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+
+            # Add new codes to gift_codes and trigger auto-redeem
+            cfg = load_config()
+            guild_id = cfg.get("guild_id")
+            guild = self.bot.get_guild(int(guild_id)) if guild_id else None
+
+            for code in new_codes:
+                # Add to gift_codes list
+                code_entry = {
+                    "code": code,
+                    "source": "wiki_scraper",
+                    "discovered_at": utc_now().isoformat(),
+                    "expired": False,
+                }
+                if expiry_dates.get("_latest"):
+                    code_entry["expires"] = expiry_dates["_latest"]
+                gift_codes.setdefault("codes", []).append(code_entry)
+                save_data("gift_codes", gift_codes)
+
+                # Notify in gift-codes channel
+                if guild:
+                    report_ch = discord.utils.get(guild.text_channels, name="gift-codes")
+                    if report_ch:
+                        embed = discord.Embed(
+                            title=f"🔍 New Gift Code Found: `{code}`",
+                            description="Discovered from the official Kingshot Wiki!\nAuto-redeeming for all registered players...",
+                            color=discord.Color.gold(),
+                        )
+                        embed.set_footer(text="Source: kingshotwiki.com")
+                        if code_entry.get("expires"):
+                            embed.add_field(name="⏰ Expires", value=code_entry["expires"], inline=True)
+                        try:
+                            await report_ch.send(embed=embed)
+                        except Exception:
+                            pass
+
+                # Trigger auto-redeem
+                if guild:
+                    await self.auto_redeem_code(code, guild)
+
+        except Exception as e:
+            log.error(f"Wiki scraper error: {e}", exc_info=True)
+
+    @wiki_code_scraper.before_loop
+    async def before_wiki_scraper(self):
+        await self.bot.wait_until_ready()
+
+    # -----------------------------------------------------------------------
+    # /addcode — Manually add a code to the active list (Leader only)
+    # -----------------------------------------------------------------------
+    @commands.hybrid_command(name="addcode")
+    @app_commands.describe(code="Gift code to add to the active list and auto-redeem")
+    @commands.has_any_role(*LEADER_ROLES)
+    @cooldown(30)
+    async def add_code(self, ctx: commands.Context, code: str):
+        """Add a gift code to the active list and auto-redeem for all players."""
+        code = code.strip().upper()
+
+        # Check if already known
+        known = any(c["code"].upper() == code for c in gift_codes.get("codes", []))
+        if known:
+            await ctx.send(f"⚠️ Code `{code}` is already in the active list.", ephemeral=True)
+            return
+
+        # Add to gift_codes
+        gift_codes.setdefault("codes", []).append({
+            "code": code,
+            "source": "manual",
+            "discovered_at": utc_now().isoformat(),
+            "expired": False,
+            "added_by": str(ctx.author.id),
+        })
+        save_data("gift_codes", gift_codes)
+
+        await ctx.send(f"✅ Code `{code}` added! Auto-redeeming for all registered players...", ephemeral=True)
+
+        # Trigger auto-redeem
+        if ctx.guild:
+            asyncio.create_task(self.auto_redeem_code(code, ctx.guild))
 
 
 async def setup(bot):

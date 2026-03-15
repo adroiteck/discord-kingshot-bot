@@ -201,8 +201,17 @@ def get_active_events(dt=None):
     cycle = load_event_cycle()
     cycle_len = cycle.get("cycle_length_days", 28)
     day = get_cycle_day(dt)
+    if dt is None: dt = utc_now()
     active = []
     for ev in cycle.get("events", []):
+        # Special (date-anchored) events — check real calendar dates
+        if ev.get("special") and ev.get("date_start") and ev.get("date_end"):
+            ev_start = datetime.strptime(ev["date_start"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            ev_end = datetime.strptime(ev["date_end"], "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+            if ev_start <= dt < ev_end:
+                active.append(ev)
+            continue
+        # Regular cycle-based events
         start = ev["cycle_day_start"]
         duration = ev.get("duration_days", 1)
         recurring = ev.get("recurring_every_days")
@@ -226,6 +235,16 @@ def get_upcoming_events(days_ahead=7, dt=None):
     today = get_cycle_day(dt)
     upcoming = []
     for ev in cycle.get("events", []):
+        # Special (date-anchored) events — check real calendar dates
+        if ev.get("special") and ev.get("date_start"):
+            ev_start = datetime.strptime(ev["date_start"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            days_until = (ev_start - dt).days
+            if days_until == 0:
+                upcoming.append((0, dt, ev))
+            elif 0 < days_until <= days_ahead:
+                upcoming.append((days_until, dt + timedelta(days=days_until), ev))
+            continue
+        # Regular cycle-based events
         start = ev["cycle_day_start"]
         recurring = ev.get("recurring_every_days")
         if recurring:
