@@ -18,6 +18,7 @@ Cogs:
   moderation  — Kick, mute, clear, promote, demote, setup, announcements
   suggestions — Community crowdsourcing, troop reports
   tasks       — Background scheduled tasks, cleanup, bot health
+  gameapi     — Kingshot game API: gift code redemption, player lookup
 
 Usage:
   1. Set BOT_TOKEN env var (or bot_token in config.json)
@@ -65,6 +66,7 @@ COG_EXTENSIONS = [
     "cogs.moderation",
     "cogs.suggestions",
     "cogs.tasks",
+    "cogs.gameapi",
 ]
 
 
@@ -87,11 +89,12 @@ async def on_ready():
         except Exception as e:
             log.error(f"Failed to load extension {ext}: {e}")
 
-    # Start background tasks from the Tasks cog
-    tasks_cog = bot.get_cog("Tasks")
-    if tasks_cog and hasattr(tasks_cog, "start_tasks"):
-        tasks_cog.start_tasks()
-        log.info("Background tasks started")
+    # Start background tasks from cogs that have them
+    for cog_name in ("Tasks", "GameAPI"):
+        cog = bot.get_cog(cog_name)
+        if cog and hasattr(cog, "start_tasks"):
+            cog.start_tasks()
+            log.info(f"{cog_name} background tasks started")
 
     # Sync slash commands to guild
     try:
