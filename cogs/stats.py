@@ -21,7 +21,7 @@ class StatInputModal(discord.ui.Modal, title="Enter Your Stats"):
     tc_level = discord.ui.TextInput(label="Town Center Level", placeholder="e.g. 25", max_length=3, required=True)
     total_power = discord.ui.TextInput(label="Total Power (use k/m/b)", placeholder="e.g. 85m", max_length=15, required=True)
     highest_troop_tier = discord.ui.TextInput(label="Highest Troop Tier Unlocked", placeholder="e.g. T9", max_length=4, required=True)
-    generation = discord.ui.TextInput(label="Server Generation (1-5)", placeholder="e.g. 4", max_length=1, required=True)
+    generation = discord.ui.TextInput(label="Server Age (1=newest … 5=oldest)", placeholder="Profile → Server Info → Generation (e.g. 4)", max_length=1, required=True)
     top_heroes = discord.ui.TextInput(label="Top 3 Heroes (name, star level)", placeholder="e.g. Amadeus 5*, Hilde 4*", style=discord.TextStyle.short, max_length=100, required=False)
 
     async def on_submit(self, interaction: discord.Interaction):
