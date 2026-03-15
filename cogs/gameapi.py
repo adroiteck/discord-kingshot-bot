@@ -32,10 +32,19 @@ GIFTCODE_WATCH_CHANNEL = 1480215871359029351
 
 # Gift code pattern — alphanumeric, 6-30 chars, often with mixed case
 # Typical codes: KS2025SPRING, KINGSHOTGIFT, NEWYEAR2025, etc.
-GIFT_CODE_PATTERN = re.compile(r'\b([A-Za-z0-9]{6,30})\b')
+# --- Code extraction patterns (ordered by specificity) ---
+# 1. Official format: Gift Code: `CODE` or Gift Code: CODE
+P_BACKTICK_CODE = re.compile(r'Gift\s+Code\s*:\s*`([A-Za-z0-9]{4,30})`', re.IGNORECASE)
+# 2. Triple-backtick code blocks (bot-submitted embeds)
+P_CODEBLOCK = re.compile(r'```\s*([A-Za-z0-9]{4,30})\s*```')
+# 3. Inline backtick
+P_INLINE_TICK = re.compile(r'`([A-Za-z0-9]{4,30})`')
+# 4. Fallback: bare alphanumeric token on its own line or surrounded by whitespace
+P_BARE_CODE = re.compile(r'(?:^|\n)\s*([A-Za-z0-9]{6,30})\s*(?:\n|$)')
 
-# Words to exclude from code detection (common English words that match the pattern)
+# Words / fragments to never treat as codes
 CODE_EXCLUDE = {
+    # common English
     "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her",
     "was", "one", "our", "out", "has", "his", "how", "its", "may", "new", "now",
     "old", "see", "way", "who", "did", "get", "let", "say", "she", "too", "use",
@@ -44,10 +53,18 @@ CODE_EXCLUDE = {
     "make", "like", "time", "very", "when", "come", "could", "more", "some",
     "what", "than", "first", "also", "into", "just", "your", "over", "such",
     "after", "year", "most", "only", "made", "find", "here", "thing", "give",
+    # gift-code domain words
     "codes", "code", "gift", "free", "link", "click", "redeem", "reward",
     "rewards", "claim", "today", "check", "hello", "everyone", "update",
+    "valid", "until", "expired", "active", "submitted", "android",
+    "settings", "avatar", "interface", "website", "store", "center",
+    "giftcode", "giftcodes", "official", "governors", "bookmark",
+    "access", "concierge", "member", "expired",
+    # brand / platform
     "kingshot", "whiteout", "survival", "discord", "server", "channel",
-    "https", "http", "www", "com", "org", "message", "posted", "official",
+    "centurygame", "centurygames", "kingshotwiki",
+    "https", "http", "www", "com", "org", "message", "posted",
+    "copy", "wiki", "march", "february", "january", "april",
 }
 
 # Error code mapping
@@ -120,25 +137,59 @@ async def api_redeem_code(session: aiohttp.ClientSession, fid: str, code: str) -
         return {"err_code": -1, "msg": str(e)}
 
 
+def _is_valid_candidate(c: str) -> bool:
+    """Check whether a candidate string looks like a real gift code."""
+    if c.lower() in CODE_EXCLUDE:
+        return False
+    if c.islower():
+        return False
+    if c.isdigit():
+        return False
+    # URL fragments
+    if "." in c or "/" in c:
+        return False
+    has_letter = any(ch.isalpha() for ch in c)
+    has_digit = any(ch.isdigit() for ch in c)
+    # Mixed alphanumeric is a strong signal; all-caps 6+ chars is also valid
+    return (has_letter and has_digit) or (c.isupper() and len(c) >= 6)
+
+
 def _extract_codes_from_message(content: str) -> list[str]:
-    """Extract potential gift codes from a message. Returns list of candidate codes."""
-    candidates = GIFT_CODE_PATTERN.findall(content)
-    codes = []
-    for c in candidates:
-        # Skip if it's a common word
-        if c.lower() in CODE_EXCLUDE:
-            continue
-        # Skip if all lowercase (real codes almost always have uppercase or digits)
-        if c.islower():
-            continue
-        # Skip if it's purely numeric (not a code, probably a number)
-        if c.isdigit():
-            continue
-        # Must contain at least one letter and one digit, OR be all-caps with 8+ chars
-        has_letter = any(ch.isalpha() for ch in c)
-        has_digit = any(ch.isdigit() for ch in c)
-        if (has_letter and has_digit) or (c.isupper() and len(c) >= 8):
-            codes.append(c.upper())
+    """Extract potential gift codes from a message using prioritized patterns.
+
+    Priority order:
+      1. "Gift Code: `CODE`" — official announcement format
+      2. ```CODE``` — triple-backtick code blocks (bot embeds)
+      3. `CODE` — inline backtick
+      4. Bare all-caps/mixed token on its own line (user paste)
+    """
+    codes: list[str] = []
+
+    # --- High-confidence structured patterns (skip exclusion for these) ---
+    # 1. Official "Gift Code: `CODE`"
+    for m in P_BACKTICK_CODE.finditer(content):
+        c = m.group(1).upper()
+        if not c.isdigit() and c.lower() not in CODE_EXCLUDE:
+            codes.append(c)
+
+    # 2. Triple-backtick code blocks
+    for m in P_CODEBLOCK.finditer(content):
+        c = m.group(1).strip().upper()
+        if not c.isdigit() and c.lower() not in CODE_EXCLUDE:
+            codes.append(c)
+
+    # 3. Inline backtick (that weren't already matched by pattern 1)
+    for m in P_INLINE_TICK.finditer(content):
+        c = m.group(1).upper()
+        if c not in codes and _is_valid_candidate(c):
+            codes.append(c)
+
+    # 4. Bare tokens on their own line (user pastes)
+    for m in P_BARE_CODE.finditer(content):
+        c = m.group(1).upper()
+        if c not in codes and _is_valid_candidate(c):
+            codes.append(c)
+
     return list(dict.fromkeys(codes))  # deduplicate preserving order
 
 
