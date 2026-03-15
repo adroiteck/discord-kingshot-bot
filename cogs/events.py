@@ -92,6 +92,26 @@ EVENT_GUIDES = {
         "heroes": "**Attack:** Amadeus + Hilde + Marlin\n**Defense:** Zoe + Hilde + Saul",
         "troops": "**Attack:** 50% Inf / 20% Cav / 30% Arch\n**Defense:** 60% Inf / 20% Cav / 20% Arch",
         "tips": "• Target unshielded high-resource cities\n• Defend key resource buildings\n• Coordinate raid schedules with alliance"},
+    "anniversary": {"name": "🎂 Anniversary Festival", "emoji": "🎂", "color": 0xFF69B4,
+        "summary": "Kingshot's 1st Anniversary (Mar 17–23)! Multiple concurrent events: Governor of Hope, Night's Feast, Blooming Anthem, Kingdom Bites, Royal Feast, and more.",
+        "heroes": "Varies by daily Governor of Hope stage:\n**Day 2 (Beasts):** Diana (stamina reduction) + combat heroes\n**Day 3 (Hero Dev):** N/A — use shards\n**Days 5 & 7 (Gear):** N/A — use enhancement mats",
+        "troops": "Varies by Governor of Hope stage:\n**Day 1 (Power):** Train highest-tier\n**Day 2 (Beasts):** Full combat march\n**Day 4 (Training):** Batch train T8+\n**Day 6 (Gather):** Full gathering marches",
+        "tips": "• Governor of Hope: 7 daily stages — plan resources per day!\n• Night's Feast: Cook with alliance, use Fealty & Daily Specials\n• Blooming Anthem: Complete ALL missions for Festive Reliquary\n• Kingdom Bites: Beast hunting, gathering, gems, speedups = ingredients\n• Top 10 Feast alliances host Royal Feasts\n• Unclaimed rewards auto-mail after event ends"},
+    "governor_of_hope": {"name": "Governor of Hope", "emoji": "🏆", "color": 0xDAA520,
+        "summary": "7-day staged competition (Anniversary event). Daily stages: Power Boost → Defeat Beasts → Hero Dev → Soldier Training → Hero Gear → Gather Resources → Governor Gear.",
+        "heroes": "**Day 2 (Beasts):** Diana (stamina reduction) essential\n**Day 3 (Hero Dev):** Use Mythic shards (highest point value)\n**Day 5 (Hero Gear):** N/A — use Mithril & Forgehammers",
+        "troops": "**Day 1 (Power Boost):** Train troops + construction + research\n**Day 2 (Beasts):** Full combat marches, 1,000+ stamina\n**Day 4 (Soldier Training):** Batch train highest-tier troops\n**Day 6 (Gather):** Send all marches to resource tiles",
+        "tips": "• Each stage = 1 day — spend the RIGHT resources on the RIGHT day\n• Stage rankings give rewards daily, cumulative total = final rank\n• Day 1: Pre-queue upgrades to finish during Power Boost\n• Day 2: Save 1,000+ stamina, use Diana for -20% stamina cost\n• Day 3: Hoard Mythic Hero Shards — biggest point value\n• Day 4: Batch train T8+ troops\n• Day 5: Save Mithril & Forgehammers for this day\n• Day 6: Use gathering speed boosts, send max marches\n• Day 7: Save Governor Gear Charms and enhancement mats"},
+    "nights_feast": {"name": "Night's Feast Preparation", "emoji": "🍳", "color": 0xFFA500,
+        "summary": "Alliance cooking collaboration (Anniversary event). Obtain ingredients, prepare dishes together. Top 10 alliances host Royal Feasts!",
+        "heroes": "N/A — ingredient/cooking event.",
+        "troops": "N/A — ingredient/cooking event.",
+        "tips": "• Ingredients drop from beast hunting, gathering, gem spending, speedup usage\n• Cook dishes with alliance members for ranking points\n• Use Alliance Fealty and Daily Specials for bonus points\n• Submit dishes in Banquet of Honor for event points\n• Top 10 alliances unlock Royal Feast hosting\n• Buy exclusive items: Gourmet Delight & Festive Delicacy (event-only!)"},
+    "blooming_anthem": {"name": "Blooming Anthem", "emoji": "🌸", "color": 0xFF1493,
+        "summary": "Mission grid event (Anniversary). Complete missions on vertical/horizontal axes for stage chests. Complete ALL for the Festive Reliquary!",
+        "heroes": "N/A — mission-based event.",
+        "troops": "N/A — mission-based event.",
+        "tips": "• Grid of missions across vertical and horizontal axes\n• Complete an entire row/column = Stage Chest reward\n• Complete ALL missions = Festive Reliquary (ultimate reward)\n• Plan completions to align with Governor of Hope daily stages\n• Unclaimed rewards auto-mail after event ends\n• Start early — don't leave missions for the last day"},
 }
 
 DEFAULT_TIPS = [
@@ -114,6 +134,9 @@ DEFAULT_TIPS = [
     "💡 Submit your troop compositions with /reportcomp to help optimize for events.",
     "💡 Use /mystats to register your stats — helps leadership plan events better.",
     "💡 Check /viewsuggestions to see community-tested strategies for your event.",
+    "💡 Anniversary Festival: Governor of Hope has 7 daily stages — save the right resources for each day!",
+    "💡 Anniversary Festival: Beast hunting, gathering, gems & speedups generate feast ingredients (Kingdom Bites).",
+    "💡 Anniversary Festival: Complete ALL Blooming Anthem missions to get the Festive Reliquary!",
 ]
 
 

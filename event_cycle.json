@@ -164,6 +164,50 @@
       "type": "alliance",
       "recurring_every_days": 3,
       "reminder": "Sanctuary Battle today! Hold outposts for 30+ minutes to occupy them.\n\n🎯 **Strategy:**\n• **Formation:** 50% Infantry (tanks), 30% Archers (damage), 20% Lancers (tactics)\n• Scout enemies first — adjust troop composition to counter theirs\n• Teleport key force leaders while marching secondary troops (hybrid approach)\n• Mid-week battles often have lower participation — easier victories\n• Define in advance: when to commit vs. when to strategically withdraw\n\n📦 **Prep:**\n• R4/R5: Vote on battle time slot based on when your strongest members are online\n• Analyze which time slots had weakest resistance in previous battles\n• Set up clear comms — alliance chat for live tactical adjustments\n• Pre-position cities near target sanctuaries for quick reinforcement"
+    },
+    {
+      "name": "🎉 Anniversary Festival",
+      "emoji": "🎂",
+      "cycle_day_start": 11,
+      "duration_days": 7,
+      "type": "special",
+      "special": true,
+      "date_start": "2026-03-17",
+      "date_end": "2026-03-23",
+      "reminder": "🎂 **Anniversary Festival** is here! (March 17–23 UTC) — Kingshot's 1st Anniversary with multiple concurrent events running all week!\n\n📋 **Events Running This Week:**\n• 🏆 Governor of Hope — 7-day staged competition (the big one!)\n• 🍳 Night's Feast Preparation — Cook dishes with your alliance\n• 🎖️ Banquet of Honor — Submit dishes for points & exclusive items\n• 🌸 Blooming Anthem — Complete mission grid for chests\n• 🍖 Kingdom Bites — Collect ingredients from activities\n• 🎆 Celebration Firework & Snapshot — Decorative/photo events\n• 👑 Royal Feast — Top 10 Night's Feast alliances host feasts\n\n🎯 **Strategy:**\n• Governor of Hope is the MAIN event — plan your daily resources for each stage\n• Night's Feast + Kingdom Bites feed each other — hunt beasts, gather, spend gems, use speedups to find ingredients\n• Use Alliance Fealty and Daily Specials for bonus feast points\n• Complete ALL Blooming Anthem missions for the Festive Reliquary\n• Unclaimed rewards auto-mail after the event ends\n\n📦 **Prep:**\n• Stockpile stamina, speedups, gems, hero shards, gear mats\n• Coordinate with alliance for Night's Feast cooking\n• Plan your Governor of Hope stages in advance (see /event anniversary)"
+    },
+    {
+      "name": "Governor of Hope",
+      "emoji": "🏆",
+      "cycle_day_start": 11,
+      "duration_days": 7,
+      "type": "competitive",
+      "special": true,
+      "date_start": "2026-03-17",
+      "date_end": "2026-03-23",
+      "reminder": "🏆 **Governor of Hope** is active! 7-stage daily competition.\n\n📋 **Daily Stages (one per day):**\nDay 1 (Mar 17): **Power Boost** — Increase overall power\nDay 2 (Mar 18): **Defeat Beasts** — Hunt beasts for points\nDay 3 (Mar 19): **Hero Development** — Upgrade heroes, use shards\nDay 4 (Mar 20): **Soldier Training** — Train troops for points\nDay 5 (Mar 21): **Hero Gear** — Enhance & forge hero gear\nDay 6 (Mar 22): **Gather Resources** — Resource gathering missions\nDay 7 (Mar 23): **Governor Gear** — Governor equipment upgrades\n\n🎯 **Strategy:**\n• Each stage lasts ONE day — spend the right resources on the right day!\n• Stage rankings give rewards at the end of each day\n• Cumulative total ranking determines FINAL rewards — consistency wins\n• Day 1 (Power Boost): Construction, research, troop training all count\n• Day 2 (Defeat Beasts): Save 1,000+ stamina, use Diana for stamina reduction\n• Day 3 (Hero Dev): Hoard Mythic Hero Shards — biggest point value\n• Day 4 (Soldier Training): Batch train highest-tier troops\n• Day 5 (Hero Gear): Save Mithril & Forgehammers for this day\n• Day 6 (Gather Resources): Send all marches to resource tiles, use gathering boosts\n• Day 7 (Governor Gear): Save Governor Gear Charms and enhancement materials\n\n📦 **Prep:**\n• Similar to Strongest Governor — hoard resources for EACH stage\n• Pre-queue construction/research to finish during Power Boost day\n• Stock stamina packs for Defeat Beasts day\n• Save ALL hero shards for Hero Development day\n• Keep Mithril and Forgehammers for Hero Gear day"
+    },
+    {
+      "name": "Night's Feast Preparation",
+      "emoji": "🍳",
+      "cycle_day_start": 11,
+      "duration_days": 7,
+      "type": "alliance",
+      "special": true,
+      "date_start": "2026-03-17",
+      "date_end": "2026-03-23",
+      "reminder": "🍳 **Night's Feast Preparation** is active! Collaborate with your alliance to cook dishes.\n\n🎯 **Strategy:**\n• Obtain ingredients through beast hunting, gathering, gem spending, and speedup usage (via Kingdom Bites)\n• Combine ingredients with alliance members to prepare dishes\n• Use **Alliance Fealty** and **Daily Specials** for bonus points\n• Ranking rewards + limited exclusive prizes available\n• Top 10 alliances on the leaderboard earn the right to host **Royal Feasts**!\n\n📦 **Prep:**\n• Coordinate with alliance — ingredient sharing is key\n• Focus activities that generate ingredients (hunting, gathering)\n• Don't waste ingredients on low-value recipes\n• Push for Top 10 alliance ranking to unlock Royal Feast"
+    },
+    {
+      "name": "Blooming Anthem",
+      "emoji": "🌸",
+      "cycle_day_start": 11,
+      "duration_days": 7,
+      "type": "solo",
+      "special": true,
+      "date_start": "2026-03-17",
+      "date_end": "2026-03-23",
+      "reminder": "🌸 **Blooming Anthem** is active! Complete the mission grid for rewards.\n\n🎯 **Strategy:**\n• Complete designated missions on the grid during the event\n• Completing all missions on a vertical or horizontal axis = **Stage Chest**\n• Complete ALL missions = **Festive Reliquary** (the big prize!)\n• Plan your mission completions across the full week\n• Unclaimed rewards will be mailed to you after the event\n\n📦 **Prep:**\n• Check the mission grid early and plan which axes to complete first\n• Prioritize missions that align with Governor of Hope daily stages\n• Don't leave any missions incomplete if you want the Festive Reliquary"
     }
   ]
 }
