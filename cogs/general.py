@@ -7,9 +7,9 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from utils import (
-    PaginatorView, RolePanelView, load_data, save_data, utc_now, utc_from_iso,
-    parse_power, resolve_timezone, timezone_autocomplete, ROLE_COLORS,
-    format_delta, event_name_autocomplete
+    PaginatorView, RolePanelView, ConfirmView, load_data, save_data, utc_now,
+    utc_from_iso, parse_power, resolve_timezone, timezone_autocomplete,
+    ROLE_COLORS, format_delta, event_name_autocomplete, get_channel, cooldown
 )
 
 # In-memory stores (loaded once, persisted on change)
@@ -47,7 +47,7 @@ class General(commands.Cog):
         e2.add_field(name="💀 Kill Tracking", value="`/reportkill` `/killers` `/mykills`", inline=False)
         e2.add_field(name="🔍 Scouting & Intel", value="`/scout` `/threat` `/scouts`", inline=False)
         e2.add_field(name="🗺️ Migration & Territory", value="`/migration` `/territory` `/territory_report`", inline=False)
-        e2.add_field(name="💡 Community", value="`/suggest` `/viewsuggestions` `/reportcomp` `/troopstats` `/approvesuggestion`", inline=False)
+        e2.add_field(name="💡 Community", value="`/suggest` `/viewsuggestions` `/votesuggestion` `/topsuggestions` `/reportcomp` `/troopstats` `/approvesuggestion`", inline=False)
         e2.set_footer(text="Page 2/3 — War & Intel")
         pages.append(e2)
 
@@ -56,7 +56,9 @@ class General(commands.Cog):
         e3.add_field(name="📢 Announcements 🔒", value="`/announce` `/listannouncements` `/toggleannouncement`", inline=False)
         e3.add_field(name="👥 Role Management 🔒", value="`/promote` `/demote` `/rolepanel`", inline=False)
         e3.add_field(name="🛡️ Moderation 🔒", value="`/kick` `/mute` `/unmute` `/clear` `/modlog`", inline=False)
-        e3.add_field(name="🔧 Admin 🔒", value="`/setup` `/bot_health` `/data_stats`", inline=False)
+        e3.add_field(name="🔧 Admin 🔒", value="`/setup` `/bot_health` `/data_stats` `/backup` `/configchannel` `/channels` `/configaudit` `/apistatus` `/inactive`", inline=False)
+        e3.add_field(name="🔒 Privacy", value="`/privacy` `/deletedata`", inline=False)
+        e3.add_field(name="📜 War History", value="`/warhistory` `/warlog`", inline=False)
         e3.add_field(name="🏆 Achievements", value="`/achievements` `/mvp`", inline=False)
         e3.set_footer(text="Page 3/3 — Admin & Moderation")
         pages.append(e3)
@@ -111,6 +113,16 @@ class General(commands.Cog):
         """Set your in-game name and update your server nickname."""
         uid = str(ctx.author.id)
         clean_ign = ign.strip()
+        # Check for duplicate IGN
+        ign_lower = clean_ign.lower()
+        for other_uid, other_data in user_profiles.items():
+            if other_uid != uid and other_data.get("ign", "").lower() == ign_lower:
+                await ctx.send(
+                    f"⚠️ The IGN `{clean_ign}` is already claimed by <@{other_uid}>. "
+                    f"If this is wrong, ask an officer to resolve it.",
+                    ephemeral=True,
+                )
+                return
         if uid not in user_profiles: user_profiles[uid] = {}
         user_profiles[uid]["ign"] = clean_ign
         save_data("profiles", user_profiles)
@@ -218,7 +230,7 @@ class General(commands.Cog):
         gift_codes.setdefault("codes", []).append({"code": code, "rewards": rewards, "added_by": ctx.author.display_name, "added_at": utc_now().isoformat(), "expired": False})
         save_data("gift_codes", gift_codes)
         await ctx.send(f"✅ Gift code `{code}` added! Rewards: {rewards}")
-        gift_ch = discord.utils.get(ctx.guild.text_channels, name="gift-codes")
+        gift_ch = get_channel(ctx.guild, "gift-codes")
         if gift_ch and gift_ch != ctx.channel:
             embed = discord.Embed(title="🎁 New Gift Code!", color=discord.Color.from_str("#FF69B4"))
             embed.add_field(name="Code", value=f"```{code}```", inline=False)
@@ -349,6 +361,115 @@ class General(commands.Cog):
 
         embed.set_footer(text=f"{len(history)} data points tracked")
         await ctx.send(embed=embed, ephemeral=True)
+
+
+    # --- /privacy --- NEW
+    @commands.hybrid_command(name="privacy")
+    @cooldown(15)
+    async def privacy(self, ctx: commands.Context):
+        """View what data the bot stores about you."""
+        uid = str(ctx.author.id)
+        embed = discord.Embed(title="🔒 Your Stored Data", color=discord.Color.blue())
+
+        # Profile
+        profile = user_profiles.get(uid, {})
+        if profile:
+            embed.add_field(name="👤 Profile", value=f"IGN: {profile.get('ign', 'None')}\nPower: {profile.get('power', 0):,}", inline=True)
+        else:
+            embed.add_field(name="👤 Profile", value="No data", inline=True)
+
+        # Timezone
+        tz = user_timezones.get(uid)
+        embed.add_field(name="🕐 Timezone", value=tz or "Not set", inline=True)
+
+        # Power history
+        ph = power_history.get(uid, [])
+        embed.add_field(name="📈 Power History", value=f"{len(ph)} entries", inline=True)
+
+        # Stats
+        stats = load_data("member_stats", {}).get(uid, {})
+        embed.add_field(name="📊 Stats", value="Stored" if stats else "None", inline=True)
+
+        # Game registration
+        reg = load_data("registered_players", {"players": {}})["players"].get(uid)
+        embed.add_field(name="🎮 Game Link", value=f"FID: {reg['fid']}" if reg else "Not linked", inline=True)
+
+        # Language preference
+        lang = load_data("user_languages", {}).get(uid)
+        embed.add_field(name="🌐 Language", value=lang or "Not set", inline=True)
+
+        # Kill reports
+        kills = load_data("kill_log", {"kills": []})
+        my_kills = [k for k in kills.get("kills", []) if k.get("reporter_id") == ctx.author.id]
+        embed.add_field(name="💀 Kill Reports", value=f"{len(my_kills)} reports", inline=True)
+
+        # Reminder opt-in
+        opted_in = uid in reminder_optins.get("users", [])
+        embed.add_field(name="🔔 Reminders", value="Opted in" if opted_in else "Opted out", inline=True)
+
+        embed.set_footer(text="Use /deletedata to remove all your stored data")
+        await ctx.send(embed=embed, ephemeral=True)
+
+    # --- /deletedata --- NEW
+    @commands.hybrid_command(name="deletedata")
+    @cooldown(60)
+    async def delete_data(self, ctx: commands.Context):
+        """Delete ALL your stored data from the bot. This cannot be undone."""
+        view = ConfirmView()
+        embed = discord.Embed(
+            title="⚠️ Delete All Your Data?",
+            description=(
+                "This will permanently remove:\n"
+                "• Your profile (IGN, power)\n"
+                "• Power history\n"
+                "• Member stats & troop data\n"
+                "• Timezone preference\n"
+                "• Language preference\n"
+                "• Game registration (FID link)\n"
+                "• Reminder opt-in\n\n"
+                "**This action cannot be undone.**"
+            ),
+            color=discord.Color.red(),
+        )
+        msg = await ctx.send(embed=embed, view=view, ephemeral=True)
+        await view.wait()
+        if not view.confirmed:
+            await msg.edit(content="❌ Data deletion cancelled.", embed=None, view=None)
+            return
+
+        uid = str(ctx.author.id)
+        deleted = []
+
+        # Profile
+        if uid in user_profiles:
+            del user_profiles[uid]; save_data("profiles", user_profiles); deleted.append("Profile")
+        # Timezone
+        if uid in user_timezones:
+            del user_timezones[uid]; save_data("user_timezones", user_timezones); deleted.append("Timezone")
+        # Power history
+        if uid in power_history:
+            del power_history[uid]; save_data("power_history", power_history); deleted.append("Power History")
+        # Reminder opt-in
+        users = reminder_optins.get("users", [])
+        if uid in users:
+            users.remove(uid); save_data("reminder_optins", reminder_optins); deleted.append("Reminders")
+        # Member stats
+        ms = load_data("member_stats", {})
+        if uid in ms:
+            del ms[uid]; save_data("member_stats", ms); deleted.append("Stats")
+        # Game registration
+        rp = load_data("registered_players", {"players": {}})
+        if uid in rp["players"]:
+            del rp["players"][uid]; save_data("registered_players", rp); deleted.append("Game Link")
+        # Language pref
+        ul = load_data("user_languages", {})
+        if uid in ul:
+            del ul[uid]; save_data("user_languages", ul); deleted.append("Language")
+
+        if deleted:
+            await msg.edit(content=f"✅ Deleted: {', '.join(deleted)}. All your data has been removed.", embed=None, view=None)
+        else:
+            await msg.edit(content="ℹ️ No data found to delete.", embed=None, view=None)
 
 
 async def setup(bot):

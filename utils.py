@@ -33,6 +33,9 @@ _bot_health = {"last_save_ok": None, "last_save_fail": None, "error_count": 0, "
 def get_bot_health():
     return _bot_health
 
+BACKUP_PATH = DATA_PATH / "backups"
+BACKUP_PATH.mkdir(exist_ok=True)
+
 def load_config() -> dict:
     """Load the bot configuration from config.json."""
     with open(CONFIG_PATH) as f:
@@ -506,3 +509,106 @@ async def announcement_name_autocomplete(interaction: discord.Interaction, curre
     cfg = load_config()
     return [app_commands.Choice(name=f"{a['name']} [{'ON' if a.get('enabled') else 'OFF'}]", value=a["name"])
             for a in cfg.get("scheduled_announcements", []) if current.lower() in a["name"].lower()][:25]
+
+
+# ---------------------------------------------------------------------------
+# Configurable channel resolver
+# ---------------------------------------------------------------------------
+# Default channel name mappings (can be overridden in config.json "channel_map")
+DEFAULT_CHANNEL_MAP = {
+    "announcements": "announcements",
+    "welcome": "welcome",
+    "rules": "rules",
+    "roles": "roles",
+    "introductions": "introductions",
+    "bot-guide": "bot-guide",
+    "rally-calls": "rally-calls",
+    "war-schedule": "war-schedule",
+    "intel": "intel",
+    "gift-codes": "gift-codes",
+    "mod-log": "mod-log",
+    "war-planning": "war-planning",
+    "bot-tips": "bot-tips",
+    "officer-chat": "officer-chat",
+    "hero-guides": "hero-guides",
+    "anniversary-festival": "anniversary-festival",
+    "alliance-brawl": "alliance-brawl",
+}
+
+def get_channel_name(key: str) -> str:
+    """Resolve a logical channel key to its configured name.
+    Checks config.json 'channel_map' first, then falls back to defaults."""
+    cfg = load_config()
+    channel_map = cfg.get("channel_map", {})
+    return channel_map.get(key, DEFAULT_CHANNEL_MAP.get(key, key))
+
+def get_channel(guild: discord.Guild, key: str) -> Optional[discord.TextChannel]:
+    """Get a text channel from guild using configurable channel mapping."""
+    name = get_channel_name(key)
+    return discord.utils.get(guild.text_channels, name=name)
+
+
+# ---------------------------------------------------------------------------
+# Backup helpers
+# ---------------------------------------------------------------------------
+import shutil
+
+def create_backup(label: str = "auto") -> dict:
+    """Create a backup of all data JSON files. Returns stats dict."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y%m%d_%H%M%S")
+    backup_dir = BACKUP_PATH / f"{label}_{stamp}"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    backed_up = 0
+    total_size = 0
+    for f in DATA_PATH.glob("*.json"):
+        try:
+            shutil.copy2(f, backup_dir / f.name)
+            total_size += f.stat().st_size
+            backed_up += 1
+        except Exception as e:
+            log.error(f"Backup failed for {f.name}: {e}")
+
+    # Also backup config.json
+    try:
+        shutil.copy2(CONFIG_PATH, backup_dir / "config.json")
+        backed_up += 1
+    except Exception as e:
+        log.error(f"Config backup failed: {e}")
+
+    # Clean old backups (keep last 7 days)
+    cutoff = now - timedelta(days=7)
+    for old_dir in BACKUP_PATH.iterdir():
+        if old_dir.is_dir() and old_dir.name != backup_dir.name:
+            try:
+                # Parse timestamp from directory name
+                parts = old_dir.name.rsplit("_", 2)
+                if len(parts) >= 3:
+                    dir_date = datetime.strptime(f"{parts[-2]}_{parts[-1]}", "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+                    if dir_date < cutoff:
+                        shutil.rmtree(old_dir)
+                        log.info(f"Removed old backup: {old_dir.name}")
+            except (ValueError, OSError):
+                pass
+
+    return {"files": backed_up, "size_kb": round(total_size / 1024, 1), "path": str(backup_dir)}
+
+
+# ---------------------------------------------------------------------------
+# Config audit trail
+# ---------------------------------------------------------------------------
+def log_config_change(action: str, changed_by: str, details: str = ""):
+    """Log a config change for audit trail."""
+    audit = load_data("config_audit", {"changes": []})
+    audit["changes"].append({
+        "action": action,
+        "changed_by": changed_by,
+        "details": details,
+        "timestamp": utc_now().isoformat(),
+    })
+    # Keep last 200 entries
+    if len(audit["changes"]) > 200:
+        audit["changes"] = audit["changes"][-200:]
+    save_data("config_audit", audit)

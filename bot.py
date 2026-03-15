@@ -32,7 +32,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from utils import load_config, RolePanelView
+from utils import load_config, RolePanelView, get_channel
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -120,8 +120,8 @@ async def on_member_join(member: discord.Member):
         except discord.Forbidden:
             log.warning(f"Cannot assign role to {member} — missing permissions")
 
-    # Send welcome message
-    welcome_ch = discord.utils.get(guild.text_channels, name="welcome")
+    # Send welcome message in channel
+    welcome_ch = get_channel(guild, "welcome")
     if welcome_ch:
         embed = discord.Embed(
             title=f"Welcome to the guild, {member.display_name}! ⚔️",
@@ -140,6 +140,34 @@ async def on_member_join(member: discord.Member):
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await welcome_ch.send(embed=embed)
+
+    # Send onboarding DM (Phase 3)
+    try:
+        dm_embed = discord.Embed(
+            title=f"Welcome to {guild.name}! 🏰",
+            description=(
+                "Thanks for joining! Here's how to get started:\n\n"
+                "**Essential Commands:**\n"
+                "• `/setign YourName` — Set your in-game name\n"
+                "• `/setpower 25m` — Set your power level\n"
+                "• `/register` — Link your game account for auto gift code redemption\n"
+                "• `/timezone EST` — Set your timezone for event timers\n"
+                "• `/mystats` — Enter your detailed stats\n"
+                "• `/help` — See all available commands\n\n"
+                "**Pro Tips:**\n"
+                "• Use `/codes` to see active gift codes\n"
+                "• Use `/events` to browse event guides\n"
+                "• Use `/remindme` to get DM alerts before events\n\n"
+                "If you need help, just ask in the server!"
+            ),
+            color=discord.Color.green(),
+        )
+        dm_embed.set_footer(text=f"Sent from {guild.name}")
+        await member.send(embed=dm_embed)
+    except discord.Forbidden:
+        log.info(f"Cannot DM {member} — DMs disabled")
+    except Exception as e:
+        log.warning(f"Failed to send onboarding DM to {member}: {e}")
 
 
 # ---------------------------------------------------------------------------

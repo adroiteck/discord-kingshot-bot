@@ -14,7 +14,7 @@ from typing import Optional
 
 from utils import (
     load_data, save_data, utc_now, cooldown, PaginatorView, LEADER_ROLES, load_config,
-    load_event_cycle, EVENT_CYCLE_PATH, load_json_file, sanitize_html
+    load_event_cycle, EVENT_CYCLE_PATH, load_json_file, sanitize_html, get_channel
 )
 import json
 
@@ -82,24 +82,65 @@ ERR_CODES = {
     40014: "Invalid code",
 }
 
-# Rate limiting with adaptive backoff
+# Rate limiting with adaptive backoff + circuit breaker
 RATE_LIMIT_DELAY = 2.5  # base seconds between requests
-_api_backoff = {"delay": 2.5, "consecutive_errors": 0, "last_success": 0}
+CIRCUIT_BREAKER_THRESHOLD = 5  # consecutive failures before tripping
+_api_backoff = {
+    "delay": 2.5,
+    "consecutive_errors": 0,
+    "last_success": 0,
+    "circuit_open": False,       # True = auto-redeem disabled
+    "circuit_opened_at": 0,
+    "total_requests": 0,
+    "total_failures": 0,
+}
 
 def _get_api_delay() -> float:
     """Get current rate limit delay with adaptive backoff."""
     return min(_api_backoff["delay"], 30.0)  # Cap at 30s
 
+def _is_circuit_open() -> bool:
+    """Check if the circuit breaker is tripped (auto-redeem disabled)."""
+    if not _api_backoff["circuit_open"]:
+        return False
+    # Auto-recover after 30 minutes
+    if time.time() - _api_backoff["circuit_opened_at"] > 1800:
+        _api_backoff["circuit_open"] = False
+        log.info("Circuit breaker auto-recovered after 30 minutes")
+        return False
+    return True
+
 def _api_success():
-    """Record successful API call — reduce backoff."""
+    """Record successful API call — reduce backoff, close circuit."""
     _api_backoff["consecutive_errors"] = 0
     _api_backoff["delay"] = RATE_LIMIT_DELAY
     _api_backoff["last_success"] = time.time()
+    _api_backoff["total_requests"] += 1
+    if _api_backoff["circuit_open"]:
+        _api_backoff["circuit_open"] = False
+        log.info("Circuit breaker closed after successful request")
 
 def _api_error():
-    """Record API error — increase backoff exponentially."""
+    """Record API error — increase backoff, trip circuit if threshold reached."""
     _api_backoff["consecutive_errors"] += 1
+    _api_backoff["total_failures"] += 1
+    _api_backoff["total_requests"] += 1
     _api_backoff["delay"] = min(RATE_LIMIT_DELAY * (2 ** _api_backoff["consecutive_errors"]), 30.0)
+    if _api_backoff["consecutive_errors"] >= CIRCUIT_BREAKER_THRESHOLD and not _api_backoff["circuit_open"]:
+        _api_backoff["circuit_open"] = True
+        _api_backoff["circuit_opened_at"] = time.time()
+        log.warning(f"Circuit breaker TRIPPED after {CIRCUIT_BREAKER_THRESHOLD} consecutive failures — auto-redeem disabled")
+
+def get_api_status() -> dict:
+    """Get API health status for /apistatus command."""
+    return {
+        "consecutive_errors": _api_backoff["consecutive_errors"],
+        "circuit_open": _api_backoff["circuit_open"],
+        "current_delay": _get_api_delay(),
+        "last_success": _api_backoff["last_success"],
+        "total_requests": _api_backoff["total_requests"],
+        "total_failures": _api_backoff["total_failures"],
+    }
 
 # In-memory stores
 registered_players = load_data("registered_players", {"players": {}})
@@ -316,6 +357,11 @@ class GameAPI(commands.Cog):
     # -----------------------------------------------------------------------
     async def auto_redeem_code(self, code: str, guild: discord.Guild):
         """Redeem a gift code for all registered players. Called by /addcode or message watcher."""
+        # Circuit breaker check — skip if API is overloaded
+        if _is_circuit_open():
+            log.warning(f"Auto-redeem {code}: circuit breaker OPEN — skipping")
+            return
+
         code = code.upper()
         players = registered_players["players"]
         if not players:
@@ -386,7 +432,7 @@ class GameAPI(commands.Cog):
         save_data("code_history", code_history)
 
         # Post results
-        report_ch = discord.utils.get(guild.text_channels, name="gift-codes") if guild else None
+        report_ch = get_channel(guild, "gift-codes") if guild else None
         if report_ch:
             embed = discord.Embed(
                 title=f"🤖 Auto-Redeemed: `{code}`",
@@ -441,7 +487,7 @@ class GameAPI(commands.Cog):
 
         # Notify in gift-codes channel
         if guild and results["success"] > 0:
-            report_ch = discord.utils.get(guild.text_channels, name="gift-codes")
+            report_ch = get_channel(guild, "gift-codes")
             if report_ch:
                 try:
                     await report_ch.send(
@@ -957,7 +1003,7 @@ class GameAPI(commands.Cog):
 
                 # Notify in gift-codes channel
                 if guild:
-                    report_ch = discord.utils.get(guild.text_channels, name="gift-codes")
+                    report_ch = get_channel(guild, "gift-codes")
                     if report_ch:
                         embed = discord.Embed(
                             title=f"🔍 New Gift Code Found: `{code}`",
@@ -1115,7 +1161,7 @@ class GameAPI(commands.Cog):
 
                 # Notify in announcements channel
                 if guild:
-                    report_ch = discord.utils.get(guild.text_channels, name="announcements")
+                    report_ch = get_channel(guild, "announcements")
                     if report_ch:
                         embed = discord.Embed(
                             title="📰 Wiki Event Updates Detected",
@@ -1146,6 +1192,45 @@ class GameAPI(commands.Cog):
     @wiki_code_scraper.before_loop
     async def before_wiki_scraper(self):
         await self.bot.wait_until_ready()
+
+    # -----------------------------------------------------------------------
+    # /apistatus — View and manage API circuit breaker
+    # -----------------------------------------------------------------------
+    @commands.hybrid_command(name="apistatus", description="View Kingshot API health and circuit breaker status")
+    @app_commands.default_permissions(administrator=True)
+    @commands.has_any_role(*LEADER_ROLES)
+    @app_commands.describe(action="Optional: 'reset' to manually close the circuit breaker")
+    async def api_status(self, ctx, action: str = None):
+        """View API health and circuit breaker status. Leaders can reset the circuit breaker."""
+        status = get_api_status()
+
+        if action and action.lower() == "reset":
+            _api_backoff["circuit_open"] = False
+            _api_backoff["consecutive_errors"] = 0
+            _api_backoff["delay"] = RATE_LIMIT_DELAY
+            log.info(f"Circuit breaker manually reset by {ctx.author.display_name}")
+            await ctx.send("✅ Circuit breaker reset — auto-redeem re-enabled.", ephemeral=True)
+            return
+
+        # Build status embed
+        circuit_status = "🔴 **OPEN** (auto-redeem disabled)" if status["circuit_open"] else "🟢 **CLOSED** (healthy)"
+        last_ok = f"<t:{int(status['last_success'])}:R>" if status["last_success"] > 0 else "Never"
+        fail_rate = f"{status['total_failures']}/{status['total_requests']}" if status["total_requests"] > 0 else "0/0"
+
+        embed = discord.Embed(
+            title="🔌 Kingshot API Status",
+            color=discord.Color.red() if status["circuit_open"] else discord.Color.green(),
+        )
+        embed.add_field(name="Circuit Breaker", value=circuit_status, inline=False)
+        embed.add_field(name="Consecutive Errors", value=str(status["consecutive_errors"]), inline=True)
+        embed.add_field(name="Current Delay", value=f"{status['current_delay']:.1f}s", inline=True)
+        embed.add_field(name="Last Success", value=last_ok, inline=True)
+        embed.add_field(name="Failure Rate", value=fail_rate, inline=True)
+
+        if status["circuit_open"]:
+            embed.set_footer(text="💡 Use /apistatus reset to manually re-enable auto-redeem")
+
+        await ctx.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot):

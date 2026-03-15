@@ -10,7 +10,8 @@ import re
 from utils import (
     load_data, save_data, utc_now, utc_from_iso, format_delta,
     parse_power, cooldown, timer_name_autocomplete, ConfirmView,
-    PaginatorView, LEADER_ROLES, load_config, save_config
+    PaginatorView, LEADER_ROLES, load_config, save_config, get_channel,
+    resolve_timezone
 )
 
 # In-memory stores
@@ -197,7 +198,7 @@ class War(commands.Cog):
     @cooldown(10)
     async def rally_call(self, ctx: commands.Context, *, details: str = "Rally up! Check war room."):
         """Send an urgent rally call."""
-        rally_ch = discord.utils.get(ctx.guild.text_channels, name="rally-calls")
+        rally_ch = get_channel(ctx.guild, "rally-calls")
         target_ch = rally_ch or ctx.channel
         embed = discord.Embed(
             title="🚨 RALLY CALL 🚨", description=details,
@@ -226,7 +227,7 @@ class War(commands.Cog):
         embed.add_field(name="📊 Total March Power", value="TBD", inline=True)
         embed.add_field(name="👥 Participants", value="0", inline=True)
         view = RallyCoordView(rally_id, target, ctx.author.display_name)
-        rally_ch = discord.utils.get(ctx.guild.text_channels, name="rally-calls")
+        rally_ch = get_channel(ctx.guild, "rally-calls")
         target_ch = rally_ch or ctx.channel
         msg = await target_ch.send("@everyone", embed=embed, view=view)
         rally_sessions["rallies"].append({
@@ -263,7 +264,7 @@ class War(commands.Cog):
     @cooldown(15)
     async def war_schedule(self, ctx: commands.Context, *, schedule_text: str):
         """Post a war schedule."""
-        sched_ch = discord.utils.get(ctx.guild.text_channels, name="war-schedule")
+        sched_ch = get_channel(ctx.guild, "war-schedule")
         target_ch = sched_ch or ctx.channel
         embed = discord.Embed(
             title="🗓️ War Schedule", description=schedule_text.replace("\\n", "\n"),
@@ -350,28 +351,61 @@ class War(commands.Cog):
     @commands.hybrid_command(name="settimer")
     @app_commands.default_permissions(manage_guild=True)
     @commands.has_any_role("R5 | Alliance Leader", "R4 | Leadership", "R3 | TC25+")
-    @app_commands.describe(args="Event name | UTC datetime (e.g. Swordland | 2026-03-15 20:00)")
+    @app_commands.describe(args="Name | datetime | tz (e.g. Swordland | 2026-03-15 20:00 | EST)")
     async def set_timer(self, ctx: commands.Context, *, args: str):
-        """Set an event timer. Usage: /settimer Swordland | 2026-03-15 20:00"""
-        parts = args.split("|", 1)
-        if len(parts) != 2:
-            await ctx.send("❌ Usage: `/settimer Event Name | YYYY-MM-DD HH:MM`")
+        """Set an event timer. Format: Name | YYYY-MM-DD HH:MM | timezone (tz optional)"""
+        parts = [p.strip() for p in args.split("|")]
+        if len(parts) < 2:
+            await ctx.send("❌ Usage: `/settimer Event Name | YYYY-MM-DD HH:MM` (optionally add `| EST` or your timezone)")
             return
-        name = parts[0].strip()
+        name = parts[0]
+        time_str = parts[1]
+        tz_input = parts[2] if len(parts) >= 3 else None
+
+        # Parse time
         try:
-            target = utc_from_iso(parts[1].strip())
+            target = utc_from_iso(time_str)
         except ValueError:
             try:
-                target = datetime.strptime(parts[1].strip(), "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+                target = datetime.strptime(time_str, "%Y-%m-%d %H:%M")
             except ValueError:
                 await ctx.send("❌ Invalid date format. Use: `YYYY-MM-DD HH:MM`")
                 return
+
+        # Apply timezone if provided, otherwise check user's stored tz, fallback to UTC
+        if tz_input:
+            resolved_tz = resolve_timezone(tz_input)
+            if not resolved_tz:
+                await ctx.send(f"❌ Unknown timezone `{tz_input}`. Try: EST, PST, UTC, America/New_York", ephemeral=True)
+                return
+        else:
+            # Try user's stored timezone
+            user_tz_data = load_data("user_timezones", {})
+            resolved_tz = user_tz_data.get(str(ctx.author.id))
+
+        if resolved_tz:
+            from zoneinfo import ZoneInfo
+            local_tz = ZoneInfo(resolved_tz)
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=local_tz)
+            # Convert to UTC for storage
+            target = target.astimezone(timezone.utc)
+            tz_note = f" ({resolved_tz})"
+        else:
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=timezone.utc)
+            tz_note = " (UTC)"
+
+        if target <= utc_now():
+            await ctx.send("❌ That time is in the past!", ephemeral=True)
+            return
+
         war_timers.setdefault("timers", []).append({
             "name": name, "time": target.isoformat(), "set_by": ctx.author.display_name,
         })
         save_data("war_timers", war_timers)
         delta = target - utc_now()
-        await ctx.send(f"✅ Timer set: **{name}** in ~{format_delta(delta)} ({target.strftime('%b %d, %I:%M %p')} UTC)")
+        await ctx.send(f"✅ Timer set: **{name}** in ~{format_delta(delta)} ({target.strftime('%b %d, %I:%M %p')} UTC){tz_note}")
 
     # --- /deltimer ---
     @commands.hybrid_command(name="deltimer")
@@ -492,7 +526,7 @@ class War(commands.Cog):
         if notes:
             embed.add_field(name="Intel Notes", value=notes, inline=False)
         embed.set_footer(text=f"Scouted by {ctx.author.display_name}")
-        intel_ch = discord.utils.get(ctx.guild.text_channels, name="intel")
+        intel_ch = get_channel(ctx.guild, "intel")
         target_ch = intel_ch or ctx.channel
         await target_ch.send(embed=embed)
         if target_ch != ctx.channel:
@@ -556,7 +590,7 @@ class War(commands.Cog):
             timestamp=utc_now(),
         )
         embed.set_footer(text=f"Announced by {ctx.author.display_name}")
-        announce_ch = discord.utils.get(ctx.guild.text_channels, name="announcements")
+        announce_ch = get_channel(ctx.guild, "announcements")
         target_ch = announce_ch or ctx.channel
         await target_ch.send("@everyone", embed=embed)
         if target_ch != ctx.channel:
@@ -615,6 +649,108 @@ class War(commands.Cog):
                 value=f"Status: {e['status'].title()} | Last update: {e['timestamp'][:10]}",
                 inline=True,
             )
+        await ctx.send(embed=embed, ephemeral=True)
+
+
+    # --- /warhistory --- NEW (Phase 2: War history)
+    @commands.hybrid_command(name="warhistory")
+    @app_commands.describe(limit="Number of recent events to show (default 10)")
+    @cooldown(30)
+    async def war_history(self, ctx: commands.Context, limit: int = 10):
+        """View history of war signups, rallies, and territory changes."""
+        limit = min(max(limit, 1), 25)
+        embeds = []
+
+        # Page 1: Recent war signups
+        signups = war_signups.get("signups", [])
+        e1 = discord.Embed(title="📜 War History — Signups", color=discord.Color.dark_red())
+        if signups:
+            for s in reversed(signups[-limit:]):
+                confirmed = len(s.get("confirmed", []))
+                declined = len(s.get("declined", []))
+                maybe = len(s.get("maybe", []))
+                total = confirmed + declined + maybe
+                ts = s.get("created_at", "?")[:10]
+                e1.add_field(
+                    name=f"⚔️ {s['event_name']} ({ts})",
+                    value=f"✅ {confirmed} | ❌ {declined} | ❓ {maybe} | Total: {total}",
+                    inline=False,
+                )
+        else:
+            e1.description = "No war signups recorded yet."
+        embeds.append(e1)
+
+        # Page 2: Recent rallies
+        rallies = rally_sessions.get("rallies", [])
+        e2 = discord.Embed(title="📜 War History — Rallies", color=discord.Color.red())
+        if rallies:
+            for r in reversed(rallies[-limit:]):
+                ts = r.get("created_at", "?")[:16]
+                e2.add_field(
+                    name=f"🚨 {r['target']} ({ts})",
+                    value=f"Called by {r['caller']}",
+                    inline=False,
+                )
+        else:
+            e2.description = "No rallies recorded yet."
+        embeds.append(e2)
+
+        # Page 3: Recent territory changes
+        entries = territory_log.get("entries", [])
+        e3 = discord.Embed(title="📜 War History — Territory", color=discord.Color.dark_gold())
+        if entries:
+            for e in reversed(entries[-limit:]):
+                emoji = {"captured": "🟢", "lost": "🔴", "contested": "🟡"}.get(e["status"], "⚪")
+                ts = e.get("timestamp", "?")[:10]
+                e3.add_field(
+                    name=f"{emoji} {e['zone']} — {e['status'].title()} ({ts})",
+                    value=f"By {e['reporter']} | {e.get('notes', '') or 'No notes'}",
+                    inline=False,
+                )
+        else:
+            e3.description = "No territory changes recorded yet."
+        embeds.append(e3)
+
+        view = PaginatorView(embeds)
+        await ctx.send(embed=embeds[0], view=view, ephemeral=True)
+
+    # --- /warlog --- NEW (Phase 2: Enhanced error context for war operations)
+    @commands.hybrid_command(name="warlog")
+    @app_commands.default_permissions(manage_guild=True)
+    @commands.has_any_role(*LEADER_ROLES)
+    @cooldown(30)
+    async def war_log(self, ctx: commands.Context):
+        """Show a combined war activity log for leadership review."""
+        embed = discord.Embed(title="📋 War Activity Summary", color=discord.Color.dark_red(), timestamp=utc_now())
+
+        # Active timers count
+        active_timers = [t for t in war_timers.get("timers", []) if utc_from_iso(t["time"]) > utc_now()]
+        embed.add_field(name="⏰ Active Timers", value=str(len(active_timers)), inline=True)
+
+        # Recent signups
+        signups = war_signups.get("signups", [])
+        embed.add_field(name="📝 Total Signups", value=str(len(signups)), inline=True)
+
+        # Rally count
+        rallies = rally_sessions.get("rallies", [])
+        embed.add_field(name="🚨 Total Rallies", value=str(len(rallies)), inline=True)
+
+        # Kill stats
+        kills = kill_log.get("kills", [])
+        total_killed = sum(k.get("troops_killed", 0) for k in kills)
+        embed.add_field(name="💀 Total Kills Logged", value=f"{len(kills)} reports ({total_killed:,} troops)", inline=False)
+
+        # Scout stats
+        scouts = scout_reports.get("reports", [])
+        embed.add_field(name="🔍 Scout Reports", value=str(len(scouts)), inline=True)
+
+        # Territory
+        territories = territory_log.get("entries", [])
+        captured = sum(1 for e in territories if e["status"] == "captured")
+        lost = sum(1 for e in territories if e["status"] == "lost")
+        embed.add_field(name="🗺️ Territory", value=f"🟢 {captured} captured | 🔴 {lost} lost", inline=True)
+
+        embed.set_footer(text="Use /warhistory for detailed event-by-event history")
         await ctx.send(embed=embed, ephemeral=True)
 
 

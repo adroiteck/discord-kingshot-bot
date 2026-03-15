@@ -125,6 +125,61 @@ class Suggestions(commands.Cog):
         embed.add_field(name="🕐 Recent Reports", value=recent_text or "None", inline=False)
         await ctx.send(embed=embed, ephemeral=True)
 
+    # --- /votesuggestion --- NEW (Phase 3: Suggestion voting)
+    @commands.hybrid_command(name="votesuggestion")
+    @app_commands.describe(index="Suggestion number to vote for")
+    @cooldown(10)
+    async def votesuggestion(self, ctx: commands.Context, index: int):
+        """Vote for a community suggestion."""
+        if index < 1 or index > len(user_suggestions["suggestions"]):
+            await ctx.send("❌ Invalid suggestion number.", ephemeral=True)
+            return
+        s = user_suggestions["suggestions"][index - 1]
+        uid = ctx.author.id
+        # Track voters to prevent double-voting
+        voters = s.setdefault("voters", [])
+        if uid in voters:
+            await ctx.send(f"⚠️ You already voted for suggestion #{index}.", ephemeral=True)
+            return
+        voters.append(uid)
+        s["votes"] = s.get("votes", 0) + 1
+        save_data("user_suggestions", user_suggestions)
+        await ctx.send(
+            f"👍 Voted for suggestion #{index}! ({s['votes']} total votes)\n"
+            f"**{s['event'].title()}:** {s['suggestion'][:80]}",
+            ephemeral=True,
+        )
+
+    # --- /topsuggestions --- NEW (Phase 3: View top-voted suggestions)
+    @commands.hybrid_command(name="topsuggestions")
+    @app_commands.describe(event="Event to view top suggestions for (leave empty for all)")
+    @cooldown(15)
+    async def topsuggestions(self, ctx: commands.Context, event: str = None):
+        """View the most popular community suggestions."""
+        suggestions = user_suggestions["suggestions"]
+        if event:
+            suggestions = [s for s in suggestions if s["event"] == event.lower()]
+        active = [s for s in suggestions if s.get("status") != "rejected"]
+        if not active:
+            await ctx.send("No suggestions found. Use `/suggest` to add one!", ephemeral=True)
+            return
+        # Sort by votes
+        ranked = sorted(active, key=lambda s: s.get("votes", 0), reverse=True)[:10]
+        lines = []
+        for i, s in enumerate(ranked, 1):
+            status = "✅" if s.get("status") == "approved" else "⏳"
+            lines.append(
+                f"{status} **#{i}** [{s['event'].title()}] — 👍 {s.get('votes', 0)} votes\n"
+                f"  {s['suggestion'][:80]} — *{s['user_name'].split('#')[0]}*"
+            )
+        embed = discord.Embed(
+            title=f"🏆 Top Suggestions{f' — {event.title()}' if event else ''}",
+            description="\n\n".join(lines),
+            color=discord.Color.gold(),
+        )
+        embed.set_footer(text="Use /votesuggestion <#> to vote")
+        await ctx.send(embed=embed, ephemeral=True)
+
     # --- /approvesuggestion ---
     @commands.hybrid_command(name="approvesuggestion")
     @app_commands.describe(index="Suggestion number", action="approve or reject")

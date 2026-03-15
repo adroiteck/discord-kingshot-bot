@@ -2,11 +2,12 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from utils import (
     load_data, save_data, utc_now, utc_from_iso, parse_power,
-    cooldown, PaginatorView, load_hero_db, load_formations, event_name_autocomplete
+    cooldown, PaginatorView, load_hero_db, load_formations, event_name_autocomplete,
+    LEADER_ROLES
 )
 
 # In-memory stores
@@ -493,6 +494,84 @@ class Stats(commands.Cog):
             description="\n".join(lines), color=discord.Color.gold(),
         )
         embed.set_footer(text="Score = power + TC + tier + kills + scouts")
+        await ctx.send(embed=embed, ephemeral=True)
+
+
+    # --- /inactive --- NEW (Phase 2: Inactivity tracking)
+    @commands.hybrid_command(name="inactive")
+    @app_commands.default_permissions(manage_guild=True)
+    @commands.has_any_role(*LEADER_ROLES)
+    @app_commands.describe(days="Days of inactivity threshold (default: 14)")
+    @cooldown(30)
+    async def inactive(self, ctx: commands.Context, days: int = 14):
+        """Show members who haven't updated stats or power recently."""
+        if days < 1 or days > 365:
+            await ctx.send("❌ Days must be 1-365.", ephemeral=True)
+            return
+
+        now = utc_now()
+        cutoff = now - timedelta(days=days)
+        inactive_members = []
+        active_members = 0
+
+        # Check all members with profiles or stats
+        all_uids = set(list(user_profiles.keys()) + list(member_stats.keys()))
+        for uid in all_uids:
+            # Find last activity timestamp across data sources
+            last_activity = None
+
+            # Check stats update
+            stats = member_stats.get(uid, {})
+            if stats.get("updated_at"):
+                ts = utc_from_iso(stats["updated_at"])
+                if last_activity is None or ts > last_activity:
+                    last_activity = ts
+            if stats.get("troops_updated_at"):
+                ts = utc_from_iso(stats["troops_updated_at"])
+                if last_activity is None or ts > last_activity:
+                    last_activity = ts
+
+            # Check power history
+            ph = load_data("power_history", {}).get(uid, [])
+            if ph:
+                ts = utc_from_iso(ph[-1]["timestamp"])
+                if last_activity is None or ts > last_activity:
+                    last_activity = ts
+
+            if last_activity is None:
+                # No trackable activity ever
+                inactive_members.append((uid, None))
+            elif last_activity < cutoff:
+                inactive_members.append((uid, last_activity))
+            else:
+                active_members += 1
+
+        if not inactive_members:
+            await ctx.send(f"✅ All {active_members} tracked members have been active in the last {days} days!", ephemeral=True)
+            return
+
+        # Sort: never active first, then oldest activity
+        inactive_members.sort(key=lambda x: x[1] or datetime.min.replace(tzinfo=timezone.utc))
+
+        embed = discord.Embed(
+            title=f"💤 Inactive Members ({len(inactive_members)})",
+            description=f"Members with no data updates in **{days}+ days**",
+            color=discord.Color.orange(),
+        )
+        lines = []
+        for uid, last in inactive_members[:20]:
+            name = member_stats.get(uid, {}).get("user_name") or user_profiles.get(uid, {}).get("ign") or f"<@{uid}>"
+            if isinstance(name, str) and "#" in name:
+                name = name.split("#")[0]
+            if last:
+                lines.append(f"• {name} — last active {last.strftime('%b %d, %Y')}")
+            else:
+                lines.append(f"• {name} — *never updated*")
+        embed.add_field(name="Members", value="\n".join(lines) or "None", inline=False)
+        if len(inactive_members) > 20:
+            embed.set_footer(text=f"Showing 20 of {len(inactive_members)} inactive members | {active_members} active")
+        else:
+            embed.set_footer(text=f"{active_members} members are active")
         await ctx.send(embed=embed, ephemeral=True)
 
 

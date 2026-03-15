@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from utils import (
     load_data, save_data, load_config, utc_now, utc_from_iso, format_delta,
     get_active_events, get_upcoming_events, cron_matches, get_bot_health,
-    cooldown, DATA_PATH
+    cooldown, DATA_PATH, BACKUP_PATH, create_backup, get_channel
 )
 
 log = logging.getLogger("kingshot-bot")
@@ -51,11 +51,13 @@ class Tasks(commands.Cog):
         self.timer_check.cancel()
         self.event_cycle_reminder.cancel()
         self.data_cleanup.cancel()
+        self.daily_backup.cancel()
 
     def start_tasks(self):
         """Start all background tasks (call from on_ready)."""
         for task in (self.scheduled_announcements, self.daily_tip_task,
-                     self.timer_check, self.event_cycle_reminder, self.data_cleanup):
+                     self.timer_check, self.event_cycle_reminder,
+                     self.data_cleanup, self.daily_backup):
             if not task.is_running():
                 task.start()
 
@@ -77,7 +79,7 @@ class Tasks(commands.Cog):
                 last = last_announcement_fires.get(ann["name"])
                 if last and (now - last).total_seconds() < 120:
                     continue
-                channel = discord.utils.get(guild.text_channels, name=ann["channel"])
+                channel = get_channel(guild, ann["channel"])
                 if channel:
                     # Replace placeholders
                     msg = ann["message"]
@@ -117,7 +119,7 @@ class Tasks(commands.Cog):
         guild = self.bot.get_guild(int(guild_id))
         if not guild:
             return
-        channel = discord.utils.get(guild.text_channels, name=tip_channel)
+        channel = get_channel(guild, "bot-tips")
         if channel:
             tip = random.choice(DEFAULT_TIPS)
             embed = discord.Embed(description=tip, color=discord.Color.green())
@@ -148,7 +150,7 @@ class Tasks(commands.Cog):
                 if guild_id:
                     guild = self.bot.get_guild(int(guild_id))
                     if guild:
-                        ch = discord.utils.get(guild.text_channels, name="announcements")
+                        ch = get_channel(guild, "announcements")
                         if ch:
                             try:
                                 await ch.send(f"⏰ **{t['name']}** starts in less than 5 minutes!")
@@ -175,7 +177,7 @@ class Tasks(commands.Cog):
         active = get_active_events()
         upcoming = get_upcoming_events(days_ahead=1)
         if upcoming:
-            ch = discord.utils.get(guild.text_channels, name="announcements")
+            ch = get_channel(guild, "announcements")
             if ch:
                 for days_until, start_date, ev in upcoming:
                     if days_until == 1:
@@ -276,6 +278,42 @@ class Tasks(commands.Cog):
     async def before_cleanup(self):
         await self.bot.wait_until_ready()
 
+    # --- Daily Backup --- NEW
+    @tasks.loop(hours=24)
+    async def daily_backup(self):
+        """Create automated daily backup of all data files."""
+        try:
+            stats = create_backup("auto")
+            log.info(f"Daily backup complete: {stats['files']} files, {stats['size_kb']}KB")
+        except Exception as e:
+            log.error(f"Daily backup failed: {e}")
+
+    @daily_backup.before_loop
+    async def before_backup(self):
+        await self.bot.wait_until_ready()
+
+    # --- /backup --- NEW
+    @commands.hybrid_command(name="backup")
+    @app_commands.default_permissions(administrator=True)
+    @commands.has_permissions(administrator=True)
+    @cooldown(300)
+    async def manual_backup(self, ctx: commands.Context):
+        """Create a manual backup of all bot data."""
+        await ctx.defer(ephemeral=True)
+        try:
+            stats = create_backup("manual")
+            embed = discord.Embed(title="💾 Backup Created", color=discord.Color.green())
+            embed.add_field(name="Files", value=str(stats["files"]), inline=True)
+            embed.add_field(name="Size", value=f"{stats['size_kb']}KB", inline=True)
+            # Count existing backups
+            import os
+            backup_count = sum(1 for d in BACKUP_PATH.iterdir() if d.is_dir())
+            embed.add_field(name="Total Backups", value=str(backup_count), inline=True)
+            embed.set_footer(text="Backups are automatically cleaned after 7 days")
+            await ctx.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            await ctx.send(f"❌ Backup failed: {e}", ephemeral=True)
+
     # --- /bot_health --- NEW
     @commands.hybrid_command(name="bot_health")
     @app_commands.default_permissions(manage_guild=True)
@@ -309,6 +347,7 @@ class Tasks(commands.Cog):
             ("Timer Check", self.timer_check),
             ("Event Reminders", self.event_cycle_reminder),
             ("Data Cleanup", self.data_cleanup),
+            ("Daily Backup", self.daily_backup),
         ]:
             status = "✅ Running" if task.is_running() else "❌ Stopped"
             task_status.append(f"{status} {name}")

@@ -9,7 +9,8 @@ import asyncio
 from utils import (
     load_config, save_config, PaginatorView, ROLE_COLORS, LEADER_ROLES,
     announcement_name_autocomplete, cooldown, utc_now, RolePanelView,
-    log_mod_action, load_data
+    log_mod_action, load_data, get_channel, get_channel_name,
+    DEFAULT_CHANNEL_MAP, log_config_change
 )
 import json, logging
 
@@ -105,6 +106,7 @@ class Moderation(commands.Cog):
                 ann["enabled"] = not ann["enabled"]
                 save_config(cfg)
                 status = "enabled" if ann["enabled"] else "disabled"
+                log_config_change("toggleannouncement", ctx.author.display_name, f"{name}: {status}")
                 await ctx.send(f"✅ `{name}` is now **{status}**."); return
         await ctx.send(f"❌ Announcement `{name}` not found.")
 
@@ -147,7 +149,7 @@ class Moderation(commands.Cog):
         log_mod_action("kick", ctx.author.display_name, member.display_name, reason)
         await ctx.send(f"👢 {member.display_name} kicked. Reason: {reason}")
         # Post to mod-log channel if it exists
-        mod_ch = discord.utils.get(ctx.guild.text_channels, name="mod-log")
+        mod_ch = get_channel(ctx.guild, "mod-log")
         if mod_ch:
             embed = discord.Embed(title="👢 Member Kicked", color=discord.Color.red())
             embed.add_field(name="Member", value=member.display_name, inline=True)
@@ -240,6 +242,77 @@ class Moderation(commands.Cog):
             await ctx.send(embed=embeds[0], ephemeral=True)
         else:
             await ctx.send(embed=embeds[0], view=PaginatorView(embeds), ephemeral=True)
+
+
+    # --- /configchannel --- NEW
+    @commands.hybrid_command(name="configchannel")
+    @app_commands.default_permissions(administrator=True)
+    @commands.has_permissions(administrator=True)
+    @app_commands.describe(
+        key="Channel key (e.g. announcements, rally-calls, intel)",
+        channel_name="New channel name to map to"
+    )
+    async def config_channel(self, ctx: commands.Context, key: str, channel_name: str = None):
+        """View or set channel mappings. Without channel_name, shows current mapping."""
+        if not channel_name:
+            current = get_channel_name(key)
+            await ctx.send(f"🔗 `{key}` → `#{current}`", ephemeral=True)
+            return
+        # Verify the channel exists
+        ch = discord.utils.get(ctx.guild.text_channels, name=channel_name)
+        if not ch:
+            await ctx.send(f"❌ Channel `#{channel_name}` not found in this server.", ephemeral=True)
+            return
+        cfg = load_config()
+        if "channel_map" not in cfg:
+            cfg["channel_map"] = {}
+        old_name = cfg["channel_map"].get(key, DEFAULT_CHANNEL_MAP.get(key, key))
+        cfg["channel_map"][key] = channel_name
+        save_config(cfg)
+        log_config_change("configchannel", ctx.author.display_name, f"{key}: {old_name} → {channel_name}")
+        await ctx.send(f"✅ `{key}` now points to `#{channel_name}` (was `#{old_name}`)", ephemeral=True)
+
+    # --- /channels --- NEW
+    @commands.hybrid_command(name="channels")
+    @app_commands.default_permissions(manage_guild=True)
+    @cooldown(15)
+    async def channels(self, ctx: commands.Context):
+        """View all configurable channel mappings."""
+        cfg = load_config()
+        channel_map = cfg.get("channel_map", {})
+        embed = discord.Embed(title="🔗 Channel Mappings", color=discord.Color.blue())
+        for key in sorted(DEFAULT_CHANNEL_MAP.keys()):
+            configured = channel_map.get(key)
+            default = DEFAULT_CHANNEL_MAP[key]
+            if configured and configured != default:
+                embed.add_field(name=key, value=f"`#{configured}` *(default: #{default})*", inline=True)
+            else:
+                embed.add_field(name=key, value=f"`#{default}`", inline=True)
+        embed.set_footer(text="Use /configchannel <key> <channel_name> to change")
+        await ctx.send(embed=embed, ephemeral=True)
+
+    # --- /configaudit --- NEW
+    @commands.hybrid_command(name="configaudit")
+    @app_commands.default_permissions(administrator=True)
+    @commands.has_permissions(administrator=True)
+    @cooldown(30)
+    async def config_audit(self, ctx: commands.Context):
+        """View recent configuration changes."""
+        audit = load_data("config_audit", {"changes": []})
+        changes = audit.get("changes", [])
+        if not changes:
+            await ctx.send("📋 No config changes logged yet.", ephemeral=True)
+            return
+        recent = changes[-15:]
+        embed = discord.Embed(title="📋 Config Audit Trail", color=discord.Color.dark_grey())
+        for c in reversed(recent):
+            embed.add_field(
+                name=f"{c['action']} — {c.get('timestamp', '?')[:16]}",
+                value=f"**By:** {c['changed_by']}\n**Details:** {c.get('details', 'N/A')}",
+                inline=False,
+            )
+        embed.set_footer(text=f"Showing {len(recent)} of {len(changes)} total changes")
+        await ctx.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
