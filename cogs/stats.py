@@ -21,7 +21,7 @@ class StatInputModal(discord.ui.Modal, title="Enter Your Stats"):
     tc_level = discord.ui.TextInput(label="Town Center Level", placeholder="e.g. 25", max_length=3, required=True)
     total_power = discord.ui.TextInput(label="Total Power (use k/m/b)", placeholder="e.g. 85m", max_length=15, required=True)
     highest_troop_tier = discord.ui.TextInput(label="Highest Troop Tier Unlocked", placeholder="e.g. T9", max_length=4, required=True)
-    generation = discord.ui.TextInput(label="Server Age (1=newest … 5=oldest)", placeholder="Profile → Server Info → Generation (e.g. 4)", max_length=1, required=True)
+    generation = discord.ui.TextInput(label="Your Kingdom Number (e.g. 123)", placeholder="Shown on world map as K123, or in your profile", max_length=5, required=True)
     top_heroes = discord.ui.TextInput(label="Top 3 Heroes (name, star level)", placeholder="e.g. Amadeus 5*, Hilde 4*", style=discord.TextStyle.short, max_length=100, required=False)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -34,11 +34,13 @@ class StatInputModal(discord.ui.Modal, title="Enter Your Stats"):
             if tc < 1 or tc > 35: raise ValueError
         except ValueError:
             await interaction.response.send_message("❌ TC level must be 1-35.", ephemeral=True); return
+        # Parse kingdom number — strip leading K/k if present
+        kingdom_raw = self.generation.value.strip().upper().lstrip("K")
         try:
-            gen = int(self.generation.value.strip())
-            if gen < 1 or gen > 5: raise ValueError
+            kingdom_num = int(kingdom_raw)
+            if kingdom_num < 1 or kingdom_num > 99999: raise ValueError
         except ValueError:
-            await interaction.response.send_message("❌ Generation must be 1-5.", ephemeral=True); return
+            await interaction.response.send_message("❌ Enter your kingdom number (e.g. 123 or K123).", ephemeral=True); return
         tier_raw = self.highest_troop_tier.value.upper().strip().replace(" ", "")
         if not tier_raw.startswith("T"): tier_raw = "T" + tier_raw
         if tier_raw not in TROOP_TIERS:
@@ -47,7 +49,7 @@ class StatInputModal(discord.ui.Modal, title="Enter Your Stats"):
         if uid not in member_stats: member_stats[uid] = {}
         member_stats[uid].update({
             "user_name": str(interaction.user), "tc_level": tc, "power": pwr,
-            "highest_tier": tier_raw, "generation": gen,
+            "highest_tier": tier_raw, "kingdom": kingdom_num,
             "top_heroes": self.top_heroes.value.strip() if self.top_heroes.value else "",
             "updated_at": utc_now().isoformat(),
         })
@@ -60,7 +62,7 @@ class StatInputModal(discord.ui.Modal, title="Enter Your Stats"):
         embed.add_field(name="🏰 TC", value=f"Level {tc}", inline=True)
         embed.add_field(name="⚡ Power", value=f"{pwr:,}", inline=True)
         embed.add_field(name="🗡️ Tier", value=tier_raw, inline=True)
-        embed.add_field(name="🌍 Gen", value=f"Gen {gen}", inline=True)
+        embed.add_field(name="🌍 Kingdom", value=f"K{kingdom_num}", inline=True)
         embed.add_field(name="🦸 Heroes", value=self.top_heroes.value or "Not set", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -119,7 +121,8 @@ class Stats(commands.Cog):
             embed.add_field(name="🏰 TC", value=f"Level {data.get('tc_level', '?')}", inline=True)
             embed.add_field(name="⚡ Power", value=f"{data.get('power', 0):,}", inline=True)
             embed.add_field(name="🗡️ Tier", value=data.get("highest_tier", "?"), inline=True)
-            embed.add_field(name="🌍 Gen", value=f"Gen {data.get('generation', '?')}", inline=True)
+            kingdom = data.get("kingdom", data.get("generation", "?"))
+            embed.add_field(name="🌍 Kingdom", value=f"K{kingdom}" if kingdom != "?" else "?", inline=True)
             embed.add_field(name="🦸 Heroes", value=data.get("top_heroes", "Not set") or "Not set", inline=False)
             if data.get("infantry") is not None:
                 troop_text = (
@@ -369,8 +372,8 @@ class Stats(commands.Cog):
         if tier_num >= 11: achievements.append("🗡️ **Elite Warrior** — T11 Troops")
         elif tier_num >= 9: achievements.append("🗡️ **Veteran** — T9+ Troops")
 
-        gen = data.get("generation", 0)
-        if gen >= 4: achievements.append("🌍 **Old Guard** — Gen 4+")
+        kingdom = data.get("kingdom", 0)
+        if kingdom and kingdom <= 50: achievements.append("🌍 **Old Guard** — Early kingdom (K1-K50)")
 
         # Kill-based achievements
         kill_log_data = load_data("kill_log", {"kills": []})
