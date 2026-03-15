@@ -1,5 +1,5 @@
 """
-Kingshot Guild Discord Bot v3.0
+Kingshot Guild Discord Bot v3.1
 ================================
 A full-featured Discord bot for managing a Kingshot guild server.
 Designed for leaders AND members to use.
