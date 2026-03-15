@@ -18,52 +18,116 @@ TROOP_TIERS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11
 
 
 class StatInputModal(discord.ui.Modal, title="Enter Your Stats"):
-    tc_level = discord.ui.TextInput(label="Town Center Level", placeholder="e.g. 25", max_length=3, required=True)
-    total_power = discord.ui.TextInput(label="Total Power (use k/m/b)", placeholder="e.g. 85m", max_length=15, required=True)
-    highest_troop_tier = discord.ui.TextInput(label="Highest Troop Tier Unlocked", placeholder="e.g. T9", max_length=4, required=True)
-    generation = discord.ui.TextInput(label="Your Kingdom Number (e.g. 123)", placeholder="Shown on world map as K123, or in your profile", max_length=5, required=True)
-    top_heroes = discord.ui.TextInput(label="Top 3 Heroes (name, star level)", placeholder="e.g. Amadeus 5*, Hilde 4*", style=discord.TextStyle.short, max_length=100, required=False)
+    """Stats input modal that pre-fills existing data so users can update one or many fields."""
+
+    def __init__(self, existing: dict | None = None):
+        super().__init__()
+        e = existing or {}
+        is_update = bool(e)
+
+        self.tc_level = discord.ui.TextInput(
+            label="Town Center Level",
+            placeholder="e.g. 25",
+            default=str(e["tc_level"]) if e.get("tc_level") else None,
+            max_length=3, required=not is_update,
+        )
+        self.total_power = discord.ui.TextInput(
+            label="Total Power (use k/m/b)",
+            placeholder="e.g. 85m",
+            default=f"{e['power']:,}" if e.get("power") else None,
+            max_length=15, required=not is_update,
+        )
+        self.highest_troop_tier = discord.ui.TextInput(
+            label="Highest Troop Tier Unlocked",
+            placeholder="e.g. T9",
+            default=e.get("highest_tier") or None,
+            max_length=4, required=not is_update,
+        )
+        kingdom_val = e.get("kingdom", e.get("generation"))
+        self.kingdom = discord.ui.TextInput(
+            label="Your Kingdom Number (e.g. 123 or K123)",
+            placeholder="Shown on world map as K123",
+            default=f"K{kingdom_val}" if kingdom_val else None,
+            max_length=5, required=not is_update,
+        )
+        self.top_heroes = discord.ui.TextInput(
+            label="Top 3 Heroes (name, star level)",
+            placeholder="e.g. Amadeus 5*, Hilde 4*",
+            default=e.get("top_heroes") or None,
+            style=discord.TextStyle.short, max_length=100, required=False,
+        )
+        self.add_item(self.tc_level)
+        self.add_item(self.total_power)
+        self.add_item(self.highest_troop_tier)
+        self.add_item(self.kingdom)
+        self.add_item(self.top_heroes)
 
     async def on_submit(self, interaction: discord.Interaction):
         uid = str(interaction.user.id)
-        pwr = parse_power(self.total_power.value)
-        if pwr is None:
-            await interaction.response.send_message("❌ Invalid power value.", ephemeral=True); return
-        try:
-            tc = int(self.tc_level.value.strip())
-            if tc < 1 or tc > 35: raise ValueError
-        except ValueError:
-            await interaction.response.send_message("❌ TC level must be 1-35.", ephemeral=True); return
-        # Parse kingdom number — strip leading K/k if present
-        kingdom_raw = self.generation.value.strip().upper().lstrip("K")
-        try:
-            kingdom_num = int(kingdom_raw)
-            if kingdom_num < 1 or kingdom_num > 99999: raise ValueError
-        except ValueError:
-            await interaction.response.send_message("❌ Enter your kingdom number (e.g. 123 or K123).", ephemeral=True); return
-        tier_raw = self.highest_troop_tier.value.upper().strip().replace(" ", "")
-        if not tier_raw.startswith("T"): tier_raw = "T" + tier_raw
-        if tier_raw not in TROOP_TIERS:
-            await interaction.response.send_message(f"❌ Invalid tier. Use: {', '.join(TROOP_TIERS)}", ephemeral=True); return
-
         if uid not in member_stats: member_stats[uid] = {}
-        member_stats[uid].update({
-            "user_name": str(interaction.user), "tc_level": tc, "power": pwr,
-            "highest_tier": tier_raw, "kingdom": kingdom_num,
-            "top_heroes": self.top_heroes.value.strip() if self.top_heroes.value else "",
-            "updated_at": utc_now().isoformat(),
-        })
+        existing = member_stats[uid]
+        updates = {"user_name": str(interaction.user), "updated_at": utc_now().isoformat()}
+
+        # --- TC Level ---
+        tc_val = self.tc_level.value.strip()
+        if tc_val:
+            try:
+                tc = int(tc_val)
+                if tc < 1 or tc > 35: raise ValueError
+                updates["tc_level"] = tc
+            except ValueError:
+                await interaction.response.send_message("❌ TC level must be 1-35.", ephemeral=True); return
+        tc = updates.get("tc_level", existing.get("tc_level", "?"))
+
+        # --- Power ---
+        pwr_val = self.total_power.value.strip()
+        if pwr_val:
+            pwr = parse_power(pwr_val)
+            if pwr is None:
+                await interaction.response.send_message("❌ Invalid power value.", ephemeral=True); return
+            updates["power"] = pwr
+            if uid not in user_profiles: user_profiles[uid] = {}
+            user_profiles[uid]["power"] = pwr
+            save_data("profiles", user_profiles)
+        pwr = updates.get("power", existing.get("power", 0))
+
+        # --- Troop Tier ---
+        tier_val = self.highest_troop_tier.value.strip()
+        if tier_val:
+            tier_raw = tier_val.upper().replace(" ", "")
+            if not tier_raw.startswith("T"): tier_raw = "T" + tier_raw
+            if tier_raw not in TROOP_TIERS:
+                await interaction.response.send_message(f"❌ Invalid tier. Use: {', '.join(TROOP_TIERS)}", ephemeral=True); return
+            updates["highest_tier"] = tier_raw
+        tier_raw = updates.get("highest_tier", existing.get("highest_tier", "?"))
+
+        # --- Kingdom ---
+        kingdom_val = self.kingdom.value.strip()
+        if kingdom_val:
+            kingdom_raw = kingdom_val.upper().lstrip("K")
+            try:
+                kingdom_num = int(kingdom_raw)
+                if kingdom_num < 1 or kingdom_num > 99999: raise ValueError
+                updates["kingdom"] = kingdom_num
+            except ValueError:
+                await interaction.response.send_message("❌ Enter your kingdom number (e.g. 123 or K123).", ephemeral=True); return
+        kingdom_num = updates.get("kingdom", existing.get("kingdom", existing.get("generation", "?")))
+
+        # --- Heroes ---
+        heroes_val = self.top_heroes.value.strip() if self.top_heroes.value else ""
+        if heroes_val:
+            updates["top_heroes"] = heroes_val
+
+        existing.update(updates)
         save_data("member_stats", member_stats)
-        if uid not in user_profiles: user_profiles[uid] = {}
-        user_profiles[uid]["power"] = pwr
-        save_data("profiles", user_profiles)
 
         embed = discord.Embed(title="✅ Stats Updated!", color=discord.Color.green())
         embed.add_field(name="🏰 TC", value=f"Level {tc}", inline=True)
-        embed.add_field(name="⚡ Power", value=f"{pwr:,}", inline=True)
+        embed.add_field(name="⚡ Power", value=f"{pwr:,}" if isinstance(pwr, (int, float)) else str(pwr), inline=True)
         embed.add_field(name="🗡️ Tier", value=tier_raw, inline=True)
-        embed.add_field(name="🌍 Kingdom", value=f"K{kingdom_num}", inline=True)
-        embed.add_field(name="🦸 Heroes", value=self.top_heroes.value or "Not set", inline=False)
+        embed.add_field(name="🌍 Kingdom", value=f"K{kingdom_num}" if kingdom_num != "?" else "?", inline=True)
+        heroes_display = heroes_val or existing.get("top_heroes", "Not set") or "Not set"
+        embed.add_field(name="🦸 Heroes", value=heroes_display, inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -139,7 +203,7 @@ class Stats(commands.Cog):
             async def _update_stats(interaction: discord.Interaction):
                 if interaction.user.id != ctx.author.id:
                     await interaction.response.send_message("You can only update your own stats.", ephemeral=True); return
-                await interaction.response.send_modal(StatInputModal())
+                await interaction.response.send_modal(StatInputModal(existing=data))
             async def _update_troops(interaction: discord.Interaction):
                 if interaction.user.id != ctx.author.id:
                     await interaction.response.send_message("You can only update your own troops.", ephemeral=True); return
