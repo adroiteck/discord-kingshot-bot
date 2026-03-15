@@ -67,6 +67,7 @@ COG_EXTENSIONS = [
     "cogs.suggestions",
     "cogs.tasks",
     "cogs.gameapi",
+    "cogs.translate",
 ]
 
 

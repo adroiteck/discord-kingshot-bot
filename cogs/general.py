@@ -37,6 +37,7 @@ class General(commands.Cog):
         e1.add_field(name="🎮 Game Link", value="`/register` `/whoami` `/lookup` `/unregister`", inline=False)
         e1.add_field(name="⏰ Timers & TZ", value="`/timers` `/settimer` `/deltimer` `/countdown` `/timezone` `/localtime` `/remindme`", inline=False)
         e1.add_field(name="📊 Stats & Optimize", value="`/mystats` `/updatetroops` `/alliancestats` `/eventready` `/optimize` `/myfit`", inline=False)
+        e1.add_field(name="🌐 Translation", value="`/translate` `/setlang` `/languages` • React with flag emojis (🇪🇸🇫🇷🇩🇪🇯🇵) or 🌐 to translate", inline=False)
         e1.set_footer(text="Page 1/3 — Member Commands")
         pages.append(e1)
 
