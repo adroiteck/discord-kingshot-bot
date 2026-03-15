@@ -8,13 +8,14 @@ import time
 import logging
 import asyncio
 import re
-import subprocess
 from datetime import datetime, timezone
 from typing import Optional
 
 from utils import (
-    load_data, save_data, utc_now, cooldown, PaginatorView, LEADER_ROLES, load_config
+    load_data, save_data, utc_now, cooldown, PaginatorView, LEADER_ROLES, load_config,
+    load_event_cycle, EVENT_CYCLE_PATH, load_json_file
 )
+import json
 
 log = logging.getLogger("kingshot-bot")
 
@@ -89,9 +90,18 @@ gift_codes = load_data("gift_codes", {"codes": []})
 
 
 # Wiki scraper config
-WIKI_CODES_URL = "https://kingshotwiki.com/sneak-peek/"
+WIKI_BASE_URL = "https://kingshotwiki.com"
+WIKI_CODES_URL = f"{WIKI_BASE_URL}/sneak-peek/"
 WIKI_CODE_PATTERN = re.compile(r'Gift\s+Code\s*:\s*[`"]?([A-Za-z0-9]{4,30})[`"]?', re.IGNORECASE)
 WIKI_EXPIRY_PATTERN = re.compile(r'(?:Expir(?:es?|ation|y)|Valid\s+(?:until|through|till))\s*[:\-–]?\s*(\w+\s+\d{1,2},?\s*\d{4})', re.IGNORECASE)
+# Event date patterns for scraping event schedule info
+WIKI_EVENT_DATE_PATTERN = re.compile(
+    r'(\w[\w\s\']+?)\s*[:\-–]\s*'
+    r'(?:(\w+\s+\d{1,2})\s*[\-–]\s*(\w+\s+\d{1,2}),?\s*(\d{4})'  # "Mar 17 – Mar 23, 2026"
+    r'|(\w+\s+\d{1,2},?\s*\d{4})\s*[\-–]\s*(\w+\s+\d{1,2},?\s*\d{4})'  # "March 17, 2026 – March 23, 2026"
+    r')', re.IGNORECASE
+)
+WIKI_DURATION_PATTERN = re.compile(r'(?:Duration|Lasts?|Length)\s*[:\-–]\s*(\d+)\s*days?', re.IGNORECASE)
 
 
 def _mark_code_expired(code: str):
@@ -827,26 +837,45 @@ class GameAPI(commands.Cog):
         await self.bot.wait_until_ready()
 
     # -----------------------------------------------------------------------
-    # WIKI SCRAPER — Monitor kingshotwiki.com for new gift codes
+    # WIKI SCRAPER — Monitor kingshotwiki.com for gift codes & event updates
     # -----------------------------------------------------------------------
-    @tasks.loop(hours=1)
+    @tasks.loop(hours=24)
     async def wiki_code_scraper(self):
-        """Scrape kingshotwiki.com for new gift codes and auto-redeem them."""
-        try:
-            # Use curl to avoid Cloudflare blocking (aiohttp gets 1010 errors)
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: subprocess.run(
-                    ["curl", "-s", "-L", "--max-time", "30",
-                     "-H", "User-Agent: Mozilla/5.0 (compatible; KingshotBot/1.0)",
-                     WIKI_CODES_URL],
-                    capture_output=True, text=True, timeout=45
-                )
-            )
-            if result.returncode != 0 or not result.stdout:
-                log.warning(f"Wiki scraper: curl failed (rc={result.returncode})")
-                return
+        """Daily scrape of kingshotwiki.com for new gift codes and event updates."""
+        cfg = load_config()
+        guild_id = cfg.get("guild_id")
+        guild = self.bot.get_guild(int(guild_id)) if guild_id else None
 
-            html = result.stdout
+        # --- Phase 1: Gift Code Scraping ---
+        await self._scrape_gift_codes(guild)
+
+        # --- Phase 2: Event Info Scraping ---
+        await self._scrape_event_updates(guild)
+
+    async def _fetch_wiki_page(self, url: str) -> str | None:
+        """Fetch a wiki page using aiohttp with browser-like headers."""
+        try:
+            session = await self._get_session()
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+            }
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30), allow_redirects=True) as resp:
+                if resp.status != 200:
+                    log.warning(f"Wiki scraper: HTTP {resp.status} for {url}")
+                    return None
+                return await resp.text()
+        except Exception as e:
+            log.warning(f"Wiki scraper: fetch error for {url}: {e}")
+            return None
+
+    async def _scrape_gift_codes(self, guild: discord.Guild | None):
+        """Scrape wiki for new gift codes and auto-redeem them."""
+        try:
+            html = await self._fetch_wiki_page(WIKI_CODES_URL)
+            if not html:
+                return
 
             # Extract gift codes from the page
             found_codes = set()
@@ -866,7 +895,7 @@ class GameAPI(commands.Cog):
                 log.debug("Wiki scraper: no codes found on page")
                 return
 
-            # Check which codes are new (not already in gift_codes or code_history)
+            # Check which codes are new
             known_codes = {c["code"].upper() for c in gift_codes.get("codes", [])}
             history_codes = {c["code"].upper() for c in code_history.get("codes", [])}
             new_codes = found_codes - known_codes - history_codes
@@ -877,36 +906,29 @@ class GameAPI(commands.Cog):
 
             log.info(f"Wiki scraper: found {len(new_codes)} new code(s): {new_codes}")
 
-            # Try to extract expiry dates for context
-            expiry_dates = {}
+            # Extract expiry dates
+            expiry_date = None
             for m in WIKI_EXPIRY_PATTERN.finditer(html):
                 try:
                     date_str = m.group(1).strip()
-                    # Try common date formats
                     for fmt in ("%B %d, %Y", "%B %d %Y", "%b %d, %Y", "%b %d %Y"):
                         try:
-                            expiry_dates["_latest"] = datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+                            expiry_date = datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
                             break
                         except ValueError:
                             continue
                 except Exception:
                     pass
 
-            # Add new codes to gift_codes and trigger auto-redeem
-            cfg = load_config()
-            guild_id = cfg.get("guild_id")
-            guild = self.bot.get_guild(int(guild_id)) if guild_id else None
-
             for code in new_codes:
-                # Add to gift_codes list
                 code_entry = {
                     "code": code,
                     "source": "wiki_scraper",
                     "discovered_at": utc_now().isoformat(),
                     "expired": False,
                 }
-                if expiry_dates.get("_latest"):
-                    code_entry["expires"] = expiry_dates["_latest"]
+                if expiry_date:
+                    code_entry["expires"] = expiry_date
                 gift_codes.setdefault("codes", []).append(code_entry)
                 save_data("gift_codes", gift_codes)
 
@@ -932,44 +954,173 @@ class GameAPI(commands.Cog):
                     await self.auto_redeem_code(code, guild)
 
         except Exception as e:
-            log.error(f"Wiki scraper error: {e}", exc_info=True)
+            log.error(f"Wiki gift code scraper error: {e}", exc_info=True)
+
+    async def _scrape_event_updates(self, guild: discord.Guild | None):
+        """Scrape wiki for event schedule updates (dates, durations, new events)."""
+        try:
+            # Scrape the sneak-peek page for event info
+            html = await self._fetch_wiki_page(WIKI_CODES_URL)
+            if not html:
+                return
+
+            # Also try to find linked pages from the sneak-peek page
+            page_links = re.findall(r'href="(/sneak-peek/[^"]+)"', html)
+            all_html = [html]
+            for link in page_links[:5]:  # Limit to 5 sub-pages
+                sub_url = f"{WIKI_BASE_URL}{link}"
+                sub_html = await self._fetch_wiki_page(sub_url)
+                if sub_html:
+                    all_html.append(sub_html)
+                await asyncio.sleep(2)  # Be polite to the server
+
+            combined_html = "\n".join(all_html)
+
+            # Extract event information
+            updates = []
+
+            # Look for event date ranges
+            date_formats = ["%B %d", "%b %d", "%B %d, %Y", "%b %d, %Y"]
+
+            # Extract event names, dates, and durations from structured content
+            # Pattern: "Event Name: March 17 – March 23, 2026" or similar
+            for m in WIKI_EVENT_DATE_PATTERN.finditer(combined_html):
+                event_name = m.group(1).strip()
+                # Skip if it's just HTML tag content
+                if '<' in event_name or len(event_name) < 3 or len(event_name) > 60:
+                    continue
+                try:
+                    if m.group(2) and m.group(3) and m.group(4):
+                        year = m.group(4).strip()
+                        start_str = f"{m.group(2).strip()}, {year}"
+                        end_str = f"{m.group(3).strip()}, {year}"
+                    elif m.group(5) and m.group(6):
+                        start_str = m.group(5).strip()
+                        end_str = m.group(6).strip()
+                    else:
+                        continue
+
+                    start_date = end_date = None
+                    for fmt in date_formats:
+                        try:
+                            start_date = datetime.strptime(start_str, fmt)
+                            if start_date.year == 1900:
+                                start_date = start_date.replace(year=datetime.now().year)
+                            break
+                        except ValueError:
+                            continue
+                    for fmt in date_formats:
+                        try:
+                            end_date = datetime.strptime(end_str, fmt)
+                            if end_date.year == 1900:
+                                end_date = end_date.replace(year=datetime.now().year)
+                            break
+                        except ValueError:
+                            continue
+
+                    if start_date and end_date:
+                        updates.append({
+                            "name": event_name,
+                            "date_start": start_date.strftime("%Y-%m-%d"),
+                            "date_end": end_date.strftime("%Y-%m-%d"),
+                            "duration_days": (end_date - start_date).days + 1,
+                        })
+                except Exception:
+                    continue
+
+            # Extract duration updates
+            for m in WIKI_DURATION_PATTERN.finditer(combined_html):
+                try:
+                    duration = int(m.group(1))
+                    # Find nearby event name (look backwards in the text)
+                    pos = m.start()
+                    preceding = combined_html[max(0, pos - 200):pos]
+                    # Look for the last heading or bold text
+                    name_match = re.search(r'(?:<h\d[^>]*>|<strong>|<b>)\s*([^<]{3,60})', preceding)
+                    if name_match:
+                        updates.append({
+                            "name": name_match.group(1).strip(),
+                            "duration_days": duration,
+                        })
+                except Exception:
+                    continue
+
+            if not updates:
+                log.debug("Wiki scraper: no event updates found")
+                return
+
+            # Compare with current event_cycle.json and report changes
+            cycle = load_event_cycle()
+            existing_events = {ev["name"].lower().strip(): ev for ev in cycle.get("events", [])}
+            changes_found = []
+
+            for update in updates:
+                name_lower = update["name"].lower().strip()
+                # Try fuzzy matching against existing events
+                matched_event = existing_events.get(name_lower)
+                if not matched_event:
+                    # Try partial matching
+                    for ename, ev in existing_events.items():
+                        if name_lower in ename or ename in name_lower:
+                            matched_event = ev
+                            break
+
+                if matched_event:
+                    # Check for date changes
+                    if "date_start" in update and matched_event.get("date_start") != update["date_start"]:
+                        changes_found.append(
+                            f"📅 **{matched_event['name']}**: dates changed → "
+                            f"{update['date_start']} to {update.get('date_end', '?')}"
+                        )
+                    if "duration_days" in update and matched_event.get("duration_days") != update["duration_days"]:
+                        changes_found.append(
+                            f"⏱️ **{matched_event['name']}**: duration → "
+                            f"{matched_event.get('duration_days', '?')}d → {update['duration_days']}d"
+                        )
+                else:
+                    # Potentially a new event
+                    if update.get("date_start"):
+                        changes_found.append(
+                            f"🆕 **{update['name']}**: {update.get('date_start', '?')} – "
+                            f"{update.get('date_end', '?')} ({update.get('duration_days', '?')} days)"
+                        )
+
+            if changes_found:
+                log.info(f"Wiki scraper: found {len(changes_found)} event update(s)")
+
+                # Notify in announcements channel
+                if guild:
+                    report_ch = discord.utils.get(guild.text_channels, name="announcements")
+                    if report_ch:
+                        embed = discord.Embed(
+                            title="📰 Wiki Event Updates Detected",
+                            description="New event information found on the official wiki:\n\n"
+                                       + "\n".join(changes_found),
+                            color=discord.Color.blue(),
+                        )
+                        embed.set_footer(text="Source: kingshotwiki.com • Review & update with /event commands")
+                        try:
+                            await report_ch.send(embed=embed)
+                        except Exception:
+                            pass
+
+                # Save the raw scrape data for review
+                scrape_log = load_data("wiki_scrape_log", {"scrapes": []})
+                scrape_log["scrapes"].append({
+                    "timestamp": utc_now().isoformat(),
+                    "updates": updates,
+                    "changes": changes_found,
+                })
+                # Keep only last 30 scrape entries
+                scrape_log["scrapes"] = scrape_log["scrapes"][-30:]
+                save_data("wiki_scrape_log", scrape_log)
+
+        except Exception as e:
+            log.error(f"Wiki event scraper error: {e}", exc_info=True)
 
     @wiki_code_scraper.before_loop
     async def before_wiki_scraper(self):
         await self.bot.wait_until_ready()
-
-    # -----------------------------------------------------------------------
-    # /addcode — Manually add a code to the active list (Leader only)
-    # -----------------------------------------------------------------------
-    @commands.hybrid_command(name="addcode")
-    @app_commands.describe(code="Gift code to add to the active list and auto-redeem")
-    @commands.has_any_role(*LEADER_ROLES)
-    @cooldown(30)
-    async def add_code(self, ctx: commands.Context, code: str):
-        """Add a gift code to the active list and auto-redeem for all players."""
-        code = code.strip().upper()
-
-        # Check if already known
-        known = any(c["code"].upper() == code for c in gift_codes.get("codes", []))
-        if known:
-            await ctx.send(f"⚠️ Code `{code}` is already in the active list.", ephemeral=True)
-            return
-
-        # Add to gift_codes
-        gift_codes.setdefault("codes", []).append({
-            "code": code,
-            "source": "manual",
-            "discovered_at": utc_now().isoformat(),
-            "expired": False,
-            "added_by": str(ctx.author.id),
-        })
-        save_data("gift_codes", gift_codes)
-
-        await ctx.send(f"✅ Code `{code}` added! Auto-redeeming for all registered players...", ephemeral=True)
-
-        # Trigger auto-redeem
-        if ctx.guild:
-            asyncio.create_task(self.auto_redeem_code(code, ctx.guild))
 
 
 async def setup(bot):
