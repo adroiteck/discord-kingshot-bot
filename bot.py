@@ -2860,6 +2860,655 @@ async def eventready(ctx: commands.Context, event: str):
 
 
 # =========================================================================
+# Event Optimization Engine
+# =========================================================================
+
+# Hero database with roles, stats, and event affinity
+HERO_DB = {
+    # Name: {role, type, lethality_buff, best_events[], captain_events[], joiner_events[], tier}
+    "amadeus":   {"role": "captain",  "type": "attack",  "lethality": 25, "atk_buff": 30, "tier": "S",
+                  "captain_for": ["bear", "kvk", "swordland", "tri_alliance", "molten_fort", "all_out"],
+                  "joiner_for": []},
+    "petra":     {"role": "captain",  "type": "attack",  "lethality": 20, "atk_buff": 25, "tier": "S",
+                  "captain_for": ["bear"],
+                  "joiner_for": ["kvk", "swordland"]},
+    "rosa":      {"role": "support",  "type": "attack",  "lethality": 15, "atk_buff": 20, "tier": "A",
+                  "captain_for": ["bear"],
+                  "joiner_for": ["bear"]},
+    "vivian":    {"role": "joiner",   "type": "attack",  "lethality": 25, "atk_buff": 20, "tier": "S",
+                  "captain_for": [],
+                  "joiner_for": ["bear", "kvk", "swordland", "all_out"]},
+    "chenko":    {"role": "joiner",   "type": "attack",  "lethality": 25, "atk_buff": 15, "tier": "S",
+                  "captain_for": [],
+                  "joiner_for": ["bear", "kvk", "swordland", "all_out", "tri_alliance"]},
+    "amane":     {"role": "joiner",   "type": "attack",  "lethality": 20, "atk_buff": 15, "tier": "A",
+                  "captain_for": [],
+                  "joiner_for": ["bear", "kvk", "swordland", "all_out"]},
+    "hilde":     {"role": "flex",     "type": "attack",  "lethality": 15, "atk_buff": 25, "tier": "S",
+                  "captain_for": ["kvk", "swordland", "tri_alliance", "molten_fort"],
+                  "joiner_for": ["bear"]},
+    "marlin":    {"role": "flex",     "type": "attack",  "lethality": 10, "atk_buff": 20, "tier": "A",
+                  "captain_for": ["kvk", "swordland"],
+                  "joiner_for": ["tri_alliance", "molten_fort"]},
+    "zoe":       {"role": "captain",  "type": "defense", "lethality": 5,  "atk_buff": 10, "tier": "S",
+                  "captain_for": ["kvk", "swordland", "tri_alliance", "molten_fort", "sanctuary"],
+                  "joiner_for": []},
+    "saul":      {"role": "flex",     "type": "defense", "lethality": 5,  "atk_buff": 15, "tier": "A",
+                  "captain_for": ["sanctuary"],
+                  "joiner_for": ["kvk", "swordland"]},
+    "fahd":      {"role": "joiner",   "type": "support", "lethality": 10, "atk_buff": 10, "tier": "B",
+                  "captain_for": [],
+                  "joiner_for": ["kvk", "brawl"]},
+    "yeonwoo":   {"role": "joiner",   "type": "attack",  "lethality": 15, "atk_buff": 15, "tier": "A",
+                  "captain_for": [],
+                  "joiner_for": ["bear", "swordland"]},
+    "diana":     {"role": "utility",  "type": "support", "lethality": 0,  "atk_buff": 5,  "tier": "A",
+                  "captain_for": ["cesares", "desert_trial"],
+                  "joiner_for": []},
+    "yanu":      {"role": "joiner",   "type": "attack",  "lethality": 25, "atk_buff": 10, "tier": "A",
+                  "captain_for": [],
+                  "joiner_for": ["bear"]},
+}
+
+# Event formation presets with role requirements
+EVENT_FORMATIONS = {
+    "bear": {
+        "name": "Bear Hunt",
+        "emoji": "🐻",
+        "type": "rally",
+        "needs_rally_leader": True,
+        "host_comp": {"infantry": 1, "cavalry": 10, "archers": 89},
+        "joiner_comp": {"infantry": 0, "cavalry": 20, "archers": 80},
+        "ideal_captain_heroes": ["amadeus", "petra", "rosa"],
+        "ideal_joiner_heroes": ["vivian", "chenko", "amane", "yanu", "yeonwoo"],
+        "scoring_stat": "lethality",
+        "min_tc": 15,
+        "min_tier": "T6",
+        "roles_needed": {"rally_leader": 1, "joiners": 20},
+        "notes": "Bear deals NO return damage. Pure offense. Lethality > ATK > everything else.",
+    },
+    "kvk": {
+        "name": "Kingdom of Power (KvK)",
+        "emoji": "👑",
+        "type": "mixed",
+        "needs_rally_leader": True,
+        "attack_comp": {"infantry": 50, "cavalry": 20, "archers": 30},
+        "defense_comp": {"infantry": 60, "cavalry": 20, "archers": 20},
+        "ideal_captain_heroes": ["amadeus", "hilde", "marlin"],
+        "ideal_garrison_heroes": ["zoe", "hilde", "saul"],
+        "ideal_joiner_heroes": ["chenko", "amane", "vivian", "fahd"],
+        "scoring_stat": "atk_buff",
+        "min_tc": 20,
+        "min_tier": "T8",
+        "roles_needed": {"rally_leader": 3, "garrison_captain": 2, "attackers": 10, "defenders": 5},
+        "notes": "Battle Window: 12h (10:00-22:00 UTC). Need both attack and garrison teams.",
+    },
+    "swordland": {
+        "name": "Swordland Showdown",
+        "emoji": "⚔️",
+        "type": "mixed",
+        "needs_rally_leader": True,
+        "attack_comp": {"infantry": 50, "cavalry": 20, "archers": 30},
+        "defense_comp": {"infantry": 60, "cavalry": 20, "archers": 20},
+        "ideal_captain_heroes": ["amadeus", "hilde", "marlin"],
+        "ideal_garrison_heroes": ["zoe", "hilde", "saul"],
+        "ideal_joiner_heroes": ["chenko", "amane", "vivian", "yeonwoo"],
+        "scoring_stat": "atk_buff",
+        "min_tc": 15,
+        "min_tier": "T7",
+        "roles_needed": {"attackers": 12, "defenders": 6, "scouts": 2},
+        "notes": "60% Attack / 30% Defend / 10% Scout. Rush Royal Stables FIRST.",
+    },
+    "brawl": {
+        "name": "Alliance Brawl",
+        "emoji": "💥",
+        "type": "alliance",
+        "needs_rally_leader": False,
+        "ideal_comp": {"infantry": 50, "cavalry": 20, "archers": 30},
+        "ideal_captain_heroes": ["amadeus", "hilde"],
+        "ideal_joiner_heroes": ["chenko", "amane", "fahd"],
+        "scoring_stat": "atk_buff",
+        "min_tc": 20,
+        "min_tier": "T8",
+        "roles_needed": {"top_20": 20},
+        "notes": "Day 6 = 4 horns. Save Intel Missions for Days 2 & 4.",
+    },
+    "sanctuary": {
+        "name": "Sanctuary Battle",
+        "emoji": "🏛️",
+        "type": "mixed",
+        "needs_rally_leader": True,
+        "attack_comp": {"infantry": 50, "cavalry": 30, "archers": 20},
+        "defense_comp": {"infantry": 50, "cavalry": 20, "archers": 30},
+        "ideal_captain_heroes": ["amadeus", "hilde"],
+        "ideal_garrison_heroes": ["zoe", "saul"],
+        "ideal_joiner_heroes": ["chenko", "amane"],
+        "scoring_stat": "atk_buff",
+        "min_tc": 15,
+        "min_tier": "T6",
+        "roles_needed": {"rally_leader": 2, "garrison_captain": 1, "fighters": 10},
+        "notes": "Hold outposts 30+ min. Teleport key leaders, march secondary troops.",
+    },
+    "tri_alliance": {
+        "name": "Tri-Alliance Clash",
+        "emoji": "⚡",
+        "type": "mixed",
+        "needs_rally_leader": True,
+        "attack_comp": {"infantry": 50, "cavalry": 20, "archers": 30},
+        "defense_comp": {"infantry": 60, "cavalry": 20, "archers": 20},
+        "ideal_captain_heroes": ["amadeus", "hilde", "marlin"],
+        "ideal_garrison_heroes": ["zoe", "hilde", "saul"],
+        "ideal_joiner_heroes": ["chenko", "vivian"],
+        "scoring_stat": "atk_buff",
+        "min_tc": 20,
+        "min_tier": "T8",
+        "roles_needed": {"rally_leader": 2, "garrison_captain": 2, "fighters": 15},
+        "notes": "3-way PvP. Territory control wins. Spread forces across fronts.",
+    },
+    "all_out": {
+        "name": "All Out (Kill Event)",
+        "emoji": "💀",
+        "type": "pvp",
+        "needs_rally_leader": True,
+        "attack_comp": {"infantry": 50, "cavalry": 20, "archers": 30},
+        "ideal_captain_heroes": ["amadeus", "hilde", "marlin"],
+        "ideal_joiner_heroes": ["chenko", "vivian", "amane"],
+        "scoring_stat": "atk_buff",
+        "min_tc": 15,
+        "min_tier": "T7",
+        "roles_needed": {"rally_leader": 3, "attackers": 10, "shielded": 999},
+        "notes": "⚠️ Shield if not participating! Hit milestones then shield up.",
+    },
+}
+
+
+def _parse_member_heroes(heroes_str: str) -> list:
+    """Parse hero string like 'Amadeus 5*, Hilde 4*, Zoe 4*' into structured list."""
+    if not heroes_str:
+        return []
+    heroes = []
+    for part in heroes_str.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        # Try to extract star level
+        stars = 0
+        name = part
+        for suffix in ["5*", "4*", "3*", "2*", "1*", "5", "4", "3", "2", "1"]:
+            if part.endswith(suffix):
+                name = part[:-len(suffix)].strip()
+                stars = int(suffix[0])
+                break
+        heroes.append({"name": name.lower(), "stars": stars})
+    return heroes
+
+
+def _score_member_for_event(uid: str, data: dict, event_key: str) -> dict:
+    """Score a member's fitness for a specific event role. Returns scoring dict."""
+    formation = EVENT_FORMATIONS.get(event_key)
+    if not formation:
+        return {"score": 0, "roles": [], "issues": []}
+
+    score = 0
+    roles = []
+    issues = []
+
+    power = data.get("power", 0)
+    tc = data.get("tc_level", 0)
+    tier = data.get("highest_tier", "T1")
+    gen = data.get("generation", 1)
+    heroes = _parse_member_heroes(data.get("top_heroes", ""))
+    hero_names = [h["name"] for h in heroes]
+
+    tier_num = int(tier.replace("T", "")) if tier.startswith("T") else 1
+    min_tier_num = int(formation.get("min_tier", "T1").replace("T", ""))
+
+    # TC check
+    if tc < formation.get("min_tc", 1):
+        issues.append(f"TC{tc} below minimum TC{formation['min_tc']}")
+        score -= 50
+
+    # Tier check
+    if tier_num < min_tier_num:
+        issues.append(f"{tier} below minimum {formation.get('min_tier', 'T1')}")
+        score -= 30
+
+    # Power scoring (normalized to 100M baseline)
+    score += min(power / 1_000_000, 200)  # Up to 200 pts for power
+
+    # Tier bonus
+    score += tier_num * 10  # T11 = 110, T8 = 80, etc.
+
+    # TC bonus
+    score += tc * 3  # TC25 = 75
+
+    # Hero matching for captain role
+    captain_heroes = formation.get("ideal_captain_heroes", [])
+    captain_match = sum(1 for h in hero_names if h in captain_heroes)
+    if captain_match >= 2:
+        roles.append("rally_leader")
+        score += captain_match * 40
+
+    # Hero matching for garrison role
+    garrison_heroes = formation.get("ideal_garrison_heroes", [])
+    garrison_match = sum(1 for h in hero_names if h in garrison_heroes)
+    if garrison_match >= 2:
+        roles.append("garrison_captain")
+        score += garrison_match * 35
+
+    # Hero matching for joiner role
+    joiner_heroes = formation.get("ideal_joiner_heroes", [])
+    joiner_match = sum(1 for h in hero_names if h in joiner_heroes)
+    if joiner_match > 0:
+        roles.append("joiner")
+        score += joiner_match * 25
+
+    # Hero star level bonus
+    for h in heroes:
+        if h["name"] in captain_heroes or h["name"] in joiner_heroes or h["name"] in garrison_heroes:
+            score += h["stars"] * 8
+
+    # Troop composition fitness
+    inf = data.get("infantry", 0)
+    cav = data.get("cavalry", 0)
+    arch = data.get("archers", 0)
+    total = inf + cav + arch
+    if total > 0:
+        pct_inf = inf / total * 100
+        pct_arch = arch / total * 100
+
+        if event_key == "bear":
+            # Bear needs archers
+            if pct_arch >= 70:
+                score += 50
+                roles.append("optimal_comp")
+            elif pct_arch >= 50:
+                score += 20
+            else:
+                issues.append("Low archer ratio for Bear Hunt")
+        else:
+            # PvP events need balanced comp
+            if 35 <= pct_inf <= 65 and pct_arch >= 15:
+                score += 30
+                roles.append("balanced_comp")
+
+    # March capacity bonus
+    march_cap = data.get("march_capacity", 0)
+    if march_cap > 0:
+        score += min(march_cap / 10_000, 50)
+
+    # If no heroes listed, flag it
+    if not heroes:
+        issues.append("No heroes listed — use /mystats to add")
+
+    # No troops data
+    if total == 0:
+        issues.append("No troop data — use /updatetroops")
+
+    return {
+        "score": round(score, 1),
+        "roles": roles,
+        "issues": issues,
+        "power": power,
+        "tc": tc,
+        "tier": tier,
+        "heroes": hero_names,
+        "gen": gen,
+    }
+
+
+@bot.hybrid_command(name="optimize", description="[Leadership] Get AI-optimized team setup for an event")
+@app_commands.describe(event="Event to optimize for (bear, kvk, swordland, brawl, sanctuary, tri_alliance, all_out)")
+@app_commands.default_permissions(manage_guild=True)
+async def optimize(ctx: commands.Context, event: str):
+    """Generate optimized team composition, rally leaders, and role assignments for an event."""
+    event_lower = event.lower()
+    formation = EVENT_FORMATIONS.get(event_lower)
+    if not formation:
+        events_list = ", ".join(EVENT_FORMATIONS.keys())
+        await ctx.send(embed=discord.Embed(
+            description=f"Unknown event. Choose from: `{events_list}`",
+            color=discord.Color.red()
+        ), ephemeral=True)
+        return
+
+    if not member_stats:
+        await ctx.send(embed=discord.Embed(
+            description="No member stats yet! Ask members to use `/mystats` and `/updatetroops` first.",
+            color=discord.Color.orange()
+        ), ephemeral=True)
+        return
+
+    # Score every member
+    scored = []
+    for uid, data in member_stats.items():
+        result = _score_member_for_event(uid, data, event_lower)
+        result["uid"] = uid
+        result["name"] = data.get("user_name", "Unknown").split("#")[0]
+        scored.append(result)
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    # Assign roles
+    rally_leaders = []
+    garrison_captains = []
+    attackers = []
+    joiners = []
+    benched = []
+
+    assigned_uids = set()
+    roles_needed = formation.get("roles_needed", {})
+
+    # Pass 1: Rally Leaders (highest score + has captain heroes)
+    rl_needed = roles_needed.get("rally_leader", 0)
+    for m in scored:
+        if len(rally_leaders) >= rl_needed:
+            break
+        if "rally_leader" in m["roles"] and m["uid"] not in assigned_uids and not m["issues"]:
+            rally_leaders.append(m)
+            assigned_uids.add(m["uid"])
+
+    # Fill with best available if not enough
+    for m in scored:
+        if len(rally_leaders) >= rl_needed:
+            break
+        if m["uid"] not in assigned_uids and m["score"] > 100 and m.get("tc", 0) >= formation.get("min_tc", 1):
+            rally_leaders.append(m)
+            assigned_uids.add(m["uid"])
+
+    # Pass 2: Garrison Captains
+    gc_needed = roles_needed.get("garrison_captain", 0)
+    for m in scored:
+        if len(garrison_captains) >= gc_needed:
+            break
+        if "garrison_captain" in m["roles"] and m["uid"] not in assigned_uids:
+            garrison_captains.append(m)
+            assigned_uids.add(m["uid"])
+
+    # Pass 3: Remaining fighters/joiners
+    fighters_needed = roles_needed.get("attackers", 0) + roles_needed.get("fighters", 0) + roles_needed.get("joiners", 0) + roles_needed.get("top_20", 0)
+    for m in scored:
+        if len(attackers) + len(joiners) >= fighters_needed:
+            break
+        if m["uid"] not in assigned_uids:
+            if m["score"] > 50 and not any("below minimum" in i for i in m["issues"]):
+                if "joiner" in m["roles"]:
+                    joiners.append(m)
+                else:
+                    attackers.append(m)
+                assigned_uids.add(m["uid"])
+
+    # Everyone else
+    for m in scored:
+        if m["uid"] not in assigned_uids:
+            benched.append(m)
+
+    # Build pages
+    pages = []
+
+    # Page 1: Overview & Optimal Formation
+    e1 = discord.Embed(
+        title=f"{formation['emoji']} {formation['name']} — Optimized Setup",
+        description=formation["notes"],
+        color=discord.Color.gold(),
+    )
+    comp = formation.get("host_comp") or formation.get("attack_comp") or formation.get("ideal_comp", {})
+    comp_text = " / ".join(f"**{v}%** {k.title()}" for k, v in comp.items())
+    e1.add_field(name="🪖 Optimal Attack Formation", value=comp_text, inline=False)
+
+    def_comp = formation.get("joiner_comp") or formation.get("defense_comp")
+    if def_comp:
+        label = "Joiner Formation" if "joiner_comp" in formation else "Defense Formation"
+        def_text = " / ".join(f"**{v}%** {k.title()}" for k, v in def_comp.items())
+        e1.add_field(name=f"🛡️ {label}", value=def_text, inline=False)
+
+    # Hero recommendations
+    capt_heroes = formation.get("ideal_captain_heroes", [])
+    garr_heroes = formation.get("ideal_garrison_heroes", [])
+    join_heroes = formation.get("ideal_joiner_heroes", [])
+    hero_text = ""
+    if capt_heroes:
+        hero_text += f"**Captain/Host:** {', '.join(h.title() for h in capt_heroes)}\n"
+    if garr_heroes:
+        hero_text += f"**Garrison:** {', '.join(h.title() for h in garr_heroes)}\n"
+    if join_heroes:
+        hero_text += f"**Joiners:** {', '.join(h.title() for h in join_heroes)}\n"
+    e1.add_field(name="🦸 Recommended Heroes", value=hero_text or "Any strong heroes", inline=False)
+
+    eligible_count = sum(1 for m in scored if not any("below minimum" in i for i in m["issues"]))
+    e1.add_field(name="👥 Eligible Members", value=f"{eligible_count}/{len(scored)} registered", inline=True)
+    e1.add_field(name="📊 Data Quality", value=f"{sum(1 for m in scored if m.get('heroes')):}/{len(scored)} have heroes listed", inline=True)
+    e1.set_footer(text="Page 1/4 — Overview")
+    pages.append(e1)
+
+    # Page 2: Rally Leaders & Garrison
+    e2 = discord.Embed(
+        title=f"{formation['emoji']} {formation['name']} — Rally Leaders & Garrison",
+        color=discord.Color.red(),
+    )
+    if rally_leaders:
+        rl_text = ""
+        for i, m in enumerate(rally_leaders, 1):
+            heroes_display = ", ".join(h.title() for h in m["heroes"][:3]) if m["heroes"] else "N/A"
+            rl_text += f"**{i}. {m['name']}** — {m['power']:,} power | {m['tier']} | TC{m['tc']}\n"
+            rl_text += f"   Heroes: {heroes_display} | Score: {m['score']}\n"
+        e2.add_field(name=f"🚩 Rally Leaders ({len(rally_leaders)}/{rl_needed})", value=rl_text, inline=False)
+    else:
+        e2.add_field(name="🚩 Rally Leaders", value="⚠️ No qualified rally leaders found!\nNeed members with high power + captain heroes.", inline=False)
+
+    if garrison_captains:
+        gc_text = ""
+        for i, m in enumerate(garrison_captains, 1):
+            heroes_display = ", ".join(h.title() for h in m["heroes"][:3]) if m["heroes"] else "N/A"
+            gc_text += f"**{i}. {m['name']}** — {m['power']:,} power | {m['tier']} | TC{m['tc']}\n"
+            gc_text += f"   Heroes: {heroes_display} | Score: {m['score']}\n"
+        e2.add_field(name=f"🏰 Garrison ({len(garrison_captains)}/{gc_needed})", value=gc_text, inline=False)
+    elif gc_needed > 0:
+        e2.add_field(name="🏰 Garrison Captains", value="⚠️ No garrison captains found!\nNeed members with Zoe, Hilde, or Saul.", inline=False)
+
+    # Shortfall warnings
+    shortfalls = []
+    if len(rally_leaders) < rl_needed:
+        shortfalls.append(f"Need **{rl_needed - len(rally_leaders)}** more rally leader(s)")
+    if len(garrison_captains) < gc_needed:
+        shortfalls.append(f"Need **{gc_needed - len(garrison_captains)}** more garrison captain(s)")
+    if shortfalls:
+        e2.add_field(name="🔴 Shortfalls", value="\n".join(shortfalls), inline=False)
+
+    e2.set_footer(text="Page 2/4 — Leadership Assignments")
+    pages.append(e2)
+
+    # Page 3: Fighter Assignments
+    e3 = discord.Embed(
+        title=f"{formation['emoji']} {formation['name']} — Fighter Roster",
+        color=discord.Color.blue(),
+    )
+    if joiners or attackers:
+        fighters_all = attackers + joiners
+        fighters_all.sort(key=lambda x: x["score"], reverse=True)
+        f_text = ""
+        for i, m in enumerate(fighters_all[:20], 1):
+            role_tag = "🏹" if "optimal_comp" in m["roles"] else "⚔️" if "balanced_comp" in m["roles"] else "👤"
+            heroes_short = ", ".join(h.title() for h in m["heroes"][:2]) if m["heroes"] else ""
+            f_text += f"{role_tag} **{m['name']}** — {m['power']:,} | {m['tier']} | {heroes_short}\n"
+        e3.add_field(name=f"⚔️ Assigned Fighters ({len(fighters_all)})", value=f_text or "None", inline=False)
+    else:
+        e3.add_field(name="⚔️ Fighters", value="No fighters assigned — need more members with stats!", inline=False)
+
+    if benched:
+        b_text = ""
+        for m in benched[:10]:
+            issue_text = " | ".join(m["issues"][:2]) if m["issues"] else "Low score"
+            b_text += f"⏸️ **{m['name']}** — {issue_text}\n"
+        if len(benched) > 10:
+            b_text += f"*+{len(benched) - 10} more benched*\n"
+        e3.add_field(name=f"⏸️ Bench / Need Improvement ({len(benched)})", value=b_text, inline=False)
+
+    e3.set_footer(text="Page 3/4 — Fighter Roster")
+    pages.append(e3)
+
+    # Page 4: Troop Analysis & Recommendations
+    e4 = discord.Embed(
+        title=f"{formation['emoji']} {formation['name']} — Troop Analysis & Action Items",
+        color=discord.Color.green(),
+    )
+
+    # Aggregate troops from assigned members only
+    assigned_members = rally_leaders + garrison_captains + attackers + joiners
+    a_inf = sum(member_stats.get(m["uid"], {}).get("infantry", 0) for m in assigned_members)
+    a_cav = sum(member_stats.get(m["uid"], {}).get("cavalry", 0) for m in assigned_members)
+    a_arch = sum(member_stats.get(m["uid"], {}).get("archers", 0) for m in assigned_members)
+    a_total = a_inf + a_cav + a_arch
+
+    if a_total > 0:
+        cur_inf = round(a_inf / a_total * 100)
+        cur_cav = round(a_cav / a_total * 100)
+        cur_arch = round(a_arch / a_total * 100)
+
+        ideal = comp
+        analysis = f"**Current (assigned):** {cur_inf}% Inf / {cur_cav}% Cav / {cur_arch}% Arch\n"
+        analysis += f"**Ideal:** {ideal.get('infantry', 0)}% Inf / {ideal.get('cavalry', 0)}% Cav / {ideal.get('archers', 0)}% Arch\n"
+
+        # Specific recommendations
+        diff_arch = cur_arch - ideal.get("archers", 0)
+        diff_inf = cur_inf - ideal.get("infantry", 0)
+        if abs(diff_arch) > 10 or abs(diff_inf) > 10:
+            analysis += "\n**⚠️ Adjustments needed:**\n"
+            if diff_arch < -10:
+                analysis += f"• Train **{abs(diff_arch)}%** more archers\n"
+            elif diff_arch > 15:
+                analysis += f"• Alliance is archer-heavy (+{diff_arch}%); reassign some to infantry\n"
+            if diff_inf < -10:
+                analysis += f"• Train **{abs(diff_inf)}%** more infantry\n"
+            elif diff_inf > 15:
+                analysis += f"• Alliance is infantry-heavy (+{diff_inf}%); reassign some to archers\n"
+        else:
+            analysis += "\n✅ Troop balance is within acceptable range!"
+
+        e4.add_field(name="📊 Troop Composition Analysis", value=analysis, inline=False)
+
+    # Action items
+    actions = []
+    members_no_heroes = [m["name"] for m in scored if not m["heroes"]]
+    members_no_troops = [m["name"] for m in scored if member_stats.get(m["uid"], {}).get("infantry") is None]
+    members_low_tc = [m["name"] for m in scored if m.get("tc", 0) < formation.get("min_tc", 1) and m.get("tc", 0) > 0]
+
+    if members_no_heroes:
+        actions.append(f"**{len(members_no_heroes)}** members need to add heroes via `/mystats`")
+    if members_no_troops:
+        actions.append(f"**{len(members_no_troops)}** members need to add troop counts via `/updatetroops`")
+    if members_low_tc:
+        actions.append(f"**{len(members_low_tc)}** members below TC{formation.get('min_tc', 1)} minimum")
+    if len(rally_leaders) < rl_needed:
+        needed_heroes = ", ".join(h.title() for h in capt_heroes)
+        actions.append(f"Recruit rally leaders with: {needed_heroes}")
+    if not actions:
+        actions.append("✅ Alliance is well-prepared for this event!")
+
+    e4.add_field(name="📋 Action Items", value="\n".join(f"• {a}" for a in actions), inline=False)
+
+    # Quick summary
+    total_assigned = len(assigned_members)
+    total_power_assigned = sum(m["power"] for m in assigned_members)
+    e4.add_field(name="📈 Summary", value=(
+        f"**Assigned:** {total_assigned} members\n"
+        f"**Combined Power:** {total_power_assigned:,}\n"
+        f"**Rally Leaders:** {len(rally_leaders)}/{rl_needed}\n"
+        f"**Avg Score:** {sum(m['score'] for m in assigned_members) / max(len(assigned_members), 1):.0f}"
+    ), inline=False)
+
+    e4.set_footer(text="Page 4/4 — Analysis & Actions | Data from /mystats + /updatetroops")
+    pages.append(e4)
+
+    view = PaginatorView(pages)
+    await ctx.send(embed=pages[0], view=view, ephemeral=True)
+
+
+@bot.hybrid_command(name="myfit", description="Check how well you fit into each event and get personal recommendations")
+async def myfit(ctx: commands.Context):
+    """See your personal fitness score and role recommendations for each event."""
+    uid = str(ctx.author.id)
+    data = member_stats.get(uid)
+
+    if not data or not data.get("tc_level"):
+        await ctx.send(embed=discord.Embed(
+            description="You haven't entered your stats yet! Use `/mystats` first to register your TC level, power, heroes, etc.",
+            color=discord.Color.orange()
+        ), ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title=f"🎯 {ctx.author.display_name}'s Event Fitness Report",
+        description="Your best role for each event based on your stats, heroes, and troops.",
+        color=discord.Color.blue(),
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.set_thumbnail(url=ctx.author.display_avatar.url)
+
+    # Score for each event
+    event_scores = []
+    for event_key, formation in EVENT_FORMATIONS.items():
+        result = _score_member_for_event(uid, data, event_key)
+        event_scores.append((event_key, formation, result))
+
+    event_scores.sort(key=lambda x: x[2]["score"], reverse=True)
+
+    for event_key, formation, result in event_scores:
+        score = result["score"]
+        roles = result["roles"]
+        issues = result["issues"]
+
+        # Rating
+        if score >= 200:
+            rating = "⭐⭐⭐ Excellent"
+        elif score >= 120:
+            rating = "⭐⭐ Good"
+        elif score >= 60:
+            rating = "⭐ Average"
+        else:
+            rating = "❌ Not Ready"
+
+        # Best role
+        if "rally_leader" in roles:
+            best_role = "🚩 Rally Leader"
+        elif "garrison_captain" in roles:
+            best_role = "🏰 Garrison Captain"
+        elif "optimal_comp" in roles:
+            best_role = "🏹 Optimized DPS"
+        elif "joiner" in roles:
+            best_role = "⚔️ Joiner"
+        elif "balanced_comp" in roles:
+            best_role = "⚔️ Fighter"
+        else:
+            best_role = "📋 Support"
+
+        issue_text = f"\n⚠️ {issues[0]}" if issues else ""
+        embed.add_field(
+            name=f"{formation['emoji']} {formation['name']}",
+            value=f"{rating} (Score: {score})\nBest Role: {best_role}{issue_text}",
+            inline=True,
+        )
+
+    # Personal improvement tips
+    tips = []
+    if not data.get("top_heroes"):
+        tips.append("Add your heroes via `/mystats` for better role matching")
+    if data.get("infantry") is None:
+        tips.append("Add troop counts via `/updatetroops` for composition scoring")
+    tier_num = int(data.get("highest_tier", "T1").replace("T", "")) if data.get("highest_tier", "").startswith("T") else 1
+    if tier_num < 8:
+        tips.append(f"Push to T8+ troops for eligibility in KvK and Brawl")
+    if data.get("tc_level", 0) < 25:
+        tips.append(f"Push TC to 25 for maximum event access")
+
+    if tips:
+        embed.add_field(name="💡 Improvement Tips", value="\n".join(f"• {t}" for t in tips), inline=False)
+
+    embed.set_footer(text="Scores based on power, TC, troop tier, heroes, and composition")
+    await ctx.send(embed=embed, ephemeral=True)
+
+
+# =========================================================================
 # Background Tasks
 # =========================================================================
 @tasks.loop(minutes=1)
